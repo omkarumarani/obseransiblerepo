@@ -1,0 +1,504 @@
+{
+	"base_app_url": "http://localhost:5522",
+	"email_from": "admin@localhost",
+	"secret_key": "",
+	
+	"mail_settings": {
+		"host": "localhost",
+		"port": 25,
+		"auth": {
+			"user": "",
+			"pass": ""
+		}
+	},
+	"email_format": "html",
+	"email_logo": "inline",
+	"max_emails_per_day": 0,
+	
+	"log_dir": "logs",
+	"log_filename": "[component].log",
+	"log_columns": ["hires_epoch", "date", "hostname", "pid", "component", "category", "code", "msg", "data"],
+	"log_archive_path": "logs/archives/[yyyy]/[mm]/[dd]/[filename]-[yyyy]-[mm]-[dd].log.gz",
+	"log_archive_keep": "30 days",
+	"log_crashes": true,
+	"temp_dir": "temp",
+	"pid_file": "logs/xyops.pid",
+	"debug_level": 5,
+	"tick_precision_ms": 50,
+	"maintenance": "04:00",
+	"exit_on_shutdown": true,
+	"ttl": 300,
+	
+	"file_expiration": "5 years",
+	"timeline_expiration": "10 years",
+	
+	"ping_freq_sec": 5,
+	"ping_timeout_sec": 30,
+	
+	"max_jobs_per_min": 100,
+	"dead_job_timeout": 120,
+	"stale_alert_timeout": 90,
+	
+	"default_plugin_credentials": {
+		"action": { "uid": "", "gid": "" },
+		"event": { "uid": "", "gid": "" },
+		"monitor": { "uid": "", "gid": "" },
+		"scheduler": { "uid": "", "gid": "" }
+	},
+	
+	"job_env": {},
+	
+	"job_universal_limits": {
+		"default": [],
+		"workflow": []
+	},
+	"job_universal_actions": {
+		"default": [
+			{
+				"enabled": true,
+				"hidden": false,
+				"condition": "error",
+				"type": "snapshot"
+			}
+		],
+		"workflow": []
+	},
+	"alert_universal_actions": [
+		{
+			"enabled": true,
+			"hidden": true,
+			"condition": "alert_new",
+			"type": "snapshot"
+		}
+	],
+	
+	"hostname_display_strip": "\\.[\\w\\-]+\\.\\w+$",
+	"ip_display_strip": "^::ffff:",
+	
+	"search_file_threads": 1,
+	"search_file_regex": "\\.(txt|log|csv|tsv|xml|json)(\\.gz)?$",
+	
+	"tickets": {
+		"email_enabled": true,
+		"email_debounce_sec": 30,
+		"overdue_schedule": "04:30",
+		"overdue_query": "status:open due:<today",
+		"due_date_format": "[dddd], [mmmm] [mday], [yyyy]",
+		"date_time_format": "[dddd], [mmmm] [mday], [yyyy] [hour12]:[mi] [ampm]"
+	},
+	
+	"hooks": {},
+	
+	"hook_text_templates": {
+		"job_start": "Job started on {{nice_server}}: {{event.title}}: {{links.job_details}}",
+		"job_success": "Job completed successfully on {{nice_server}}: {{event.title}}: {{links.job_details}}",
+		"job_error": "Job failed on {{nice_server}}: {{event.title}}: Error ({{job.code}}): {{job.description}}: {{links.job_details}}",
+		"job_progress": "Job is in progress on {{nice_server}} ({{event.title}}): {{links.job_details}}",
+		"job_suspended": "Job is suspended and requires human intervention: {{event.title}}: {{links.job_details}}&resume=1",
+		"job_limited": "{{action.msg}}: {{links.job_details}}",
+		"alert_new": "Alert: {{nice_server}}: {{def.title}}: {{alert.message}}: {{links.alert_url}}",
+		"alert_cleared": "Alert Cleared: {{nice_server}}: {{def.title}}"
+	},
+	
+	"multi": {
+		"list_url": "https://api.github.com/repos/pixlcore/xyops/releases",
+		"protocol": "ws:",
+		"connect_timeout_sec": 3,
+		"master_timeout_sec": 10,
+		"socket_opts": {
+			"rejectUnauthorized": false
+		}
+	},
+	
+	"satellite": {
+		"list_url": "https://api.github.com/repos/pixlcore/xysat/releases",
+		"base_url": "https://github.com/pixlcore/xysat/releases",
+		"image": "ghcr.io/pixlcore/xysat",
+		"version": "latest",
+		"cache_ttl": 3600,
+		"config": { 
+			"port": 5522,
+			"secure": false,
+			"socket_opts": { "rejectUnauthorized": false },
+			"pid_file": "pid.txt",
+			"log_dir": "logs",
+			"log_filename": "[component].log",
+			"log_crashes": true,
+			"log_archive_path": "logs/archives/[filename]-[yyyy]-[mm]-[dd].log.gz",
+			"log_archive_keep": "7 days",
+			"temp_dir": "temp",
+			"debug_level": 5,
+			"child_kill_timeout": 10,
+			"monitoring_enabled": true,
+			"quickmon_enabled": true
+		}
+	},
+	
+	"marketplace": {
+		"enabled": true,
+		"metadata_url": "https://raw.githubusercontent.com/pixlcore/xyops-marketplace/refs/heads/main/marketplace.json",
+		"repo_url_template": "https://raw.githubusercontent.com/[id]/refs/tags/[version]/[filename]",
+		"ttl": 3600
+	},
+	
+	"quick_monitors": [
+		{ "id": "_qm_cpu_load", "title": "CPU Load Average", "source": "cpu.avgLoad", "type": "float", "suffix": "", "min_vert_scale": 1.0 },
+		{ "id": "_qm_cpu_usage", "title": "CPU Usage %", "source": "cpu.currentLoad", "type": "float", "suffix": "%", "min_vert_scale": 100 },
+		
+		{ "id": "_qm_mem_used", "title": "Memory in Use", "source": "mem.used", "type": "bytes", "suffix": "" },
+		{ "id": "_qm_mem_avail", "title": "Memory Available", "source": "mem.available", "type": "bytes", "suffix": "" },
+		
+		{ "id": "_qm_disk_read_sec", "title": "Disk Read (Bytes)", "source": "fs.rx", "type": "bytes", "suffix": "/sec", "min_vert_scale": 1024, "delta": true, "delta_min_value": 0, "divide_by_delta": true },
+		{ "id": "_qm_disk_write_sec", "title": "Disk Write (Bytes)", "source": "fs.wx", "type": "bytes", "suffix": "/sec", "min_vert_scale": 1024, "delta": true, "delta_min_value": 0, "divide_by_delta": true },
+		
+		{ "id": "_qm_net_in_sec", "title": "Network In (Bytes)", "source": "net.rx", "type": "bytes", "suffix": "/sec", "min_vert_scale": 1024, "delta": true, "delta_min_value": 0, "divide_by_delta": true },
+		{ "id": "_qm_net_out_sec", "title": "Network Out (Bytes)", "source": "net.tx", "type": "bytes", "suffix": "/sec", "min_vert_scale": 1024, "delta": true, "delta_min_value": 0, "divide_by_delta": true }
+	],
+	
+	"default_user_privileges": {
+		"create_events": true,
+		"edit_events": true,
+		"run_jobs": true,
+		"tag_jobs": true,
+		"create_tickets": true,
+		"edit_tickets": true
+	},
+	
+	"default_user_prefs": {
+		"language": "",
+		"region": "",
+		"num_format": "",
+		"hour_cycle": "h12",
+		"timezone": "",
+		"color_acc": false,
+		"privacy_mode": false,
+		"notifications": false,
+		"effects": true,
+		"page_info": true,
+		"contrast": "auto",
+		"motion": "auto",
+		"volume": 7,
+		"filters": {
+			"brightness": 100,
+			"contrast": 100,
+			"hue": 0,
+			"saturation": 100,
+			"sepia": 0,
+			"grayscale": 0
+		},
+		"searches": [
+			{
+				"name": "All Completed",
+				"uri": "Search",
+				"icon": "cloud-search-outline"
+			},
+			{
+				"name": "Successes",
+				"uri": "Search?result=success",
+				"icon": "check-circle-outline"
+			},
+			{
+				"name": "Errors",
+				"uri": "Search?result=error",
+				"icon": "alert-decagram-outline"
+			},
+			{
+				"name": "Warnings",
+				"uri": "Search?result=warning",
+				"icon": "alert-outline"
+			},
+			{
+				"name": "Criticals",
+				"uri": "Search?result=critical",
+				"icon": "fire-alert"
+			},
+			{
+				"name": "All Tickets",
+				"uri": "Tickets",
+				"icon": "text-box-multiple-outline"
+			},
+			{
+				"name": "Open Tickets",
+				"uri": "Tickets?status=open",
+				"icon": "label-variant-outline"
+			},
+			{
+				"name": "Overdue Tickets",
+				"uri": "Tickets?status=open&query=due%3A%3Ctoday",
+				"icon": "calendar-alert"
+			},
+			{
+				"name": "My InBox",
+				"uri": "Tickets?status=open&assignee=self",
+				"icon": "email-variant"
+			},
+			{
+				"name": "My Drafts",
+				"uri": "Tickets?status=draft&username=self",
+				"icon": "dots-horizontal"
+			}
+		]
+	},
+	
+	"db_maint": {
+		"jobs": {
+			"max_rows": 1000000
+		},
+		"alerts": {
+			"max_rows": 100000
+		},
+		"snapshots": {
+			"max_rows": 100000
+		},
+		"activity": {
+			"max_rows": 100000
+		},
+		"servers": {
+			"max_rows": 10000
+		}
+	},
+	
+	"airgap": {
+		"enabled": false,
+		"outbound_whitelist": ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fd00::/8", "169.254.0.0/16", "fe80::/10"],
+		"outbound_blacklist": []
+	},
+	
+	"client": {
+		"name": "xyOps",
+		"company": "PixlCore LLC",
+		"logo_url": "/images/logotype.png",
+		
+		"items_per_page": 50,
+		"alt_items_per_page": 25,
+		"events_per_page": 500,
+		"max_table_rows": 500,
+		"max_menu_items": 1000,
+		"max_job_output": "5 MB",
+		"alt_to_toggle": false,
+		
+		"new_event_template": { 
+			"id": "",
+			"title": "",
+			"enabled": true,
+			"targets": [],
+			"params": {},
+			"fields": [],
+			"triggers": [
+				{
+					"enabled": true,
+					"type": "manual"
+				}
+			],
+			"limits": [
+				{
+					"type": "job",
+					"enabled": true,
+					"amount": 1
+				},
+				{
+					"type": "queue",
+					"enabled": true,
+					"amount": 0
+				},
+				{
+					"type": "retry",
+					"enabled": true,
+					"amount": 0,
+					"duration": 0
+				}
+			],
+			"actions": [],
+			"notes": ""
+		},
+		
+		"chart_defaults": {
+			"lineWidth": 2,
+			"lineJoin": "round",
+			"lineCap": "butt",
+			"stroke": true,
+			"fill": 0.5,
+			"horizTicks": 6,
+			"vertTicks": 6,
+			"smoothingMaxSamples": 100,
+			"smoothingMaxTotalSamples": 1000,
+			"hoverSort": -1
+		},
+		
+		"editor_defaults": {
+			"lineNumbers": false,
+			"matchBrackets": false,
+			"indentWithTabs": true,
+			"tabSize": 4,
+			"indentUnit": 4,
+			"lineWrapping": true,
+			"dragDrop": false
+		},
+		
+		"bucket_upload_settings": {
+			"max_files_per_bucket": 100,
+			"max_file_size": 1073741824,
+			"accepted_file_types": ""
+		},
+		"ticket_upload_settings": {
+			"max_files_per_ticket": 100,
+			"max_file_size": 1073741824,
+			"accepted_file_types": ""
+		},
+		"job_upload_settings": {
+			"max_files_per_job": 100,
+			"max_file_size": 1073741824,
+			"accepted_file_types": "",
+			"user_file_expiration": "30 days",
+			"plugin_file_expiration": "30 days"
+		}
+	},
+	
+	"Storage": {
+		"engine": "Hybrid",
+		"list_page_size": 100,
+		"hash_page_size": 100,
+		"concurrency": 32,
+		"transactions": true,
+		"network_transactions": false,
+		"trans_auto_recover": true,
+		"trans_dir": "data/_transactions",
+		"log_event_types": { "get": 1, "put": 1, "head": 1, "delete": 1, "expire_set": 1, "perf_min": 1, "commit":1, "index":1, "unindex":1, "search":1, "sort":1, "maint": 1 },
+		
+		"Hybrid": {
+			"docEngine": "SQLite",
+			"binaryEngine": "Filesystem"
+		},
+		
+		"Filesystem": {
+			"base_dir": "data",
+			"key_namespaces": 1,
+			"cache": {
+				"enabled": true,
+				"maxItems": 100000,
+				"maxBytes": 104857600
+			}
+		},
+		
+		"SQLite": {
+			"base_dir": "data",
+			"filename": "sqlite.db",
+			"pragmas": {
+				"auto_vacuum": 0,
+				"cache_size": -100000,
+				"journal_mode": "WAL"
+			},
+			"cache": {
+				"enabled": true,
+				"maxItems": 100000,
+				"maxBytes": 104857600
+			},
+			"backups": {
+				"enabled": true,
+				"dir": "data/backups",
+				"filename": "backup-[yyyy]-[mm]-[dd]-[hh]-[mi]-[ss].db",
+				"compress": true,
+				"keep": 7
+			}
+		},
+		
+		"AWS": {
+			"region": "us-west-1",
+			"credentials": {
+				"accessKeyId": "", 
+				"secretAccessKey": ""
+			}
+		},
+		
+		"S3": {
+			"connectTimeout": 5000,
+			"socketTimeout": 5000,
+			"maxAttempts": 50,
+			"keyPrefix": "",
+			"fileExtensions": true,
+			"params": {
+				"Bucket": ""
+			},
+			"cache": {
+				"enabled": true,
+				"maxItems": 100000,
+				"maxBytes": 104857600
+			}
+		}
+	},
+	
+	"WebServer": {
+		"port": 5522,
+		"htdocs_dir": "htdocs",
+		"max_upload_size": 1073741824,
+		"static_ttl": 31536000,
+		"static_index": "index.html",
+		"server_signature": "xyOps",
+		"compress_text": true,
+		"enable_brotli": true,
+		"timeout": 30,
+		"regex_json": "(text|javascript|js|json)",
+		"clean_headers": true,
+		"log_socket_errors": false,
+		"response_headers": {},
+		"keep_alives": "default",
+		"keep_alive_timeout": 30,
+		"max_connections": 2048,
+		"max_concurrent_requests": 256,
+		"log_requests": false,
+		"legacy_callback_support": false,
+		"startup_message": false,
+		"debug_ttl": true,
+		"debug_bind_local": true,
+		"whitelist": [],
+		"blacklist": [],
+		"uri_response_headers": {
+			"(\/|\\.html)$": {
+				"Content-Security-Policy": "default-src 'none'; script-src 'self'; script-src-elem 'self'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; manifest-src 'self';img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';",
+				"X-Frame-Options": "DENY",
+				"X-Content-Type-Options": "nosniff",
+				"Referrer-Policy": "strict-origin-when-cross-origin",
+				"Permissions-Policy": "camera=(), microphone=(), geolocation=(), fullscreen=()"
+			}
+		},
+		
+		"https": true,
+		"https_port": 5523,
+		"https_cert_file": "conf/tls.crt",
+		"https_key_file": "conf/tls.key",
+		"https_force": false,
+		"https_timeout": 30,
+		"https_header_detect": {
+			"Front-End-Https": "^on$",
+			"X-Url-Scheme": "^https$",
+			"X-Forwarded-Protocol": "^https$",
+			"X-Forwarded-Proto": "^https$",
+			"X-Forwarded-Ssl": "^on$"
+		}
+	},
+	
+	"User": {
+		"session_expire_days": 365,
+		"max_failed_logins_per_hour": 5,
+		"max_forgot_passwords_per_hour": 3,
+		"free_accounts": false,
+		"sort_global_users": false,
+		"use_bcrypt": true,
+		"use_csrf": true,
+		"mail_logger": true,
+		"valid_username_match": "^[\\w\\-\\.]+$",
+		"block_username_match": "^(self|system|abuse|admin|administrator|localhost|127\\.0\\.0\\.1|nobody|noreply|root|support|sysadmin|webmaster|www|god|staff|null|0|constructor|__defineGetter__|__defineSetter__|hasOwnProperty|__lookupGetter__|__lookupSetter__|isPrototypeOf|propertyIsEnumerable|toString|valueOf|__proto__|toLocaleString)$",
+		"cookie_settings": {
+			"path": "/",
+			"secure": "auto",
+			"httpOnly": true,
+			"sameSite": "Lax"
+		}
+	},
+	
+	"Debug": {
+		"enabled": false
+	},
+	
+	"config_overrides_file": "conf/overrides.json"
+}

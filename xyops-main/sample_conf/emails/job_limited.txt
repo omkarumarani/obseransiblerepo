@@ -1,0 +1,30 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: 📈 {{config.client.name}} Job {{action.title}} Exceeded: {{event.title}} -->
+<!-- Title: Job {{action.title}} Exceeded -->
+<!-- Button: View Details | {{links.job_details}} -->
+
+The following {{config.client.name}} job has exceeded one or more configured resource limits:
+
+- **Job ID:** `{{job.id}}`
+- **Event:** {{event.title}}
+- **Category:** {{category.title}}
+- **Plugin:** {{plugin.title}}
+- **Server:** {{nice_server}}
+- **PID:** {{job.pid}}
+- **Elapsed Time:** {{display.elapsed}}
+- **Avg. Memory Usage:** {{display.mem}}
+- **Avg. CPU Usage:** {{display.cpu}}
+
+### Limit Details:
+- **Type:** {{action.title}}
+- **Source:** {{action.source}}
+- **Message:** {{action.msg}}
+
+### Actions Taken:
+{{action.summary}}
+
+### Links:
+- [Job Details]({{links.job_details}})
+
+### Event Notes:
+{{job.notes}}

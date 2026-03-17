@@ -1,0 +1,4275 @@
+// Scheduler -- Events Config
+
+// Copyright (c) 2019 - 2026 PixlCore LLC
+// Released under the BSD 3-Clause License.
+// See the LICENSE.md file in this repository.
+
+Page.Events = class Events extends Page.PageUtils {
+	
+	onInit() {
+		// called once at page load
+		this.default_sub = 'list';
+		this.dom_prefix = 'ee';
+		
+		this.handleJobsChangedViewDebounce = debounce( this.handleJobsChangedView.bind(this), 1000 );
+	}
+	
+	onActivate(args) {
+		// page activation
+		if (!this.requireLogin(args)) return true;
+		
+		if (!args) args = {};
+		if (!args.sub && args.id) args.sub = 'view';
+		if (!args.sub) args.sub = this.default_sub;
+		this.args = args;
+		
+		app.showSidebar(true);
+		
+		this.loading();
+		this['gosub_'+args.sub](args);
+		
+		return true;
+	}
+	
+	gosub_list(args) {
+		// show event list
+		var self = this;
+		
+		if (args.plugin == '_workflow') {
+			app.setWindowTitle( "Workflows" );
+			app.setHeaderTitle( '<i class="mdi mdi-clipboard-flow-outline">&nbsp;</i>Workflows' );
+			app.highlightTab( 'Workflows' );
+			this.originTab = 'Workflows';
+		}
+		else {
+			app.setWindowTitle( "Events" );
+			app.setHeaderTitle( '<i class="mdi mdi-calendar-clock">&nbsp;</i>Events' );
+			app.highlightTab( 'Events' );
+			this.originTab = 'Events';
+		}
+		
+		var event_plugins = app.plugins.filter( function(plugin) { return plugin.type == 'event'; } );
+		var scheduler_plugins = app.plugins.filter( function(plugin) { return plugin.type == 'scheduler'; } );
+		var action_plugins = app.plugins.filter( function(plugin) { return plugin.type == 'action'; } );
+		
+		var target_items = [].concat(
+			this.buildOptGroup(app.groups, "Groups:", 'server-network'),
+			this.buildServerOptGroup("Servers:", 'router-network')
+		);
+		
+		var html = '';
+		html += '<div class="box" style="border:none;">';
+		html += '<div class="box_content" style="padding:20px;">';
+			
+			// search box
+			html += '<div class="search_box" role="search">';
+				html += '<i class="mdi mdi-magnify" onClick="$(\'#fe_el_search\').focus()">&nbsp;</i>';
+				// html += '<div class="search_help"><a href="https://github.com/pixlcore/xyops#search" target="_blank">Search Help<i class="mdi mdi-open-in-new"></i></a></div>';
+				html += '<input type="text" id="fe_el_search" maxlength="128" placeholder="Search Keywords..." value="' + escape_text_field_value(args.search || '') + '">';
+			html += '</div>';
+			
+			// options
+			html += '<div class="form_grid four" style="margin-bottom:25px">';
+				
+				// status
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-check-circle-outline">&nbsp;</i>Status:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_status',
+							title: 'Select Status',
+							options: [
+								['', 'Any Status'], 
+								{ id: 'enabled', title: 'Only Enabled', icon: 'checkbox-marked-outline' },
+								{ id: 'disabled', title: 'Only Disabled', icon: 'checkbox-blank-outline' }
+							],
+							value: args.status || '',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// category
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-folder-open-outline">&nbsp;</i>Category:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_category',
+							title: 'Select Category',
+							options: [['', 'Any Category']].concat( app.categories ),
+							value: args.category || '',
+							default_icon: 'folder-open-outline',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// target
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-lan">&nbsp;</i>Target:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_target',
+							title: 'Select Target',
+							options: [['', 'Any Target']].concat( target_items ),
+							value: args.target || '',
+							default_icon: 'server-network',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// plugin
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-power-plug">&nbsp;</i>Plugin:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_plugin',
+							title: 'Select Plugin',
+							options: [['', 'Any Plugin']].concat( event_plugins ).concat([ 
+								{ id: "_workflow", title: "Workflow", icon: "clipboard-flow-outline", group: "Special" }
+							]),
+							value: args.plugin || '',
+							default_icon: 'power-plug-outline',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// tag
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-tag-multiple-outline">&nbsp;</i>Tag:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_tag',
+							title: 'Select Tag',
+							options: [['', 'Any Tag']].concat( app.tags ),
+							value: args.tag || '',
+							default_icon: 'tag-outline',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// trigger
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-rocket-launch-outline">&nbsp;</i>Trigger:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_trigger',
+							title: 'Select Trigger',
+							options: [
+								['', 'Any Trigger'], 
+								{ id: 'manual', title: 'Manual', icon: 'run-fast' },
+								{ id: 'magic', title: 'Magic Link', icon: 'link-variant' },
+								{ id: 'schedule', title: 'Schedule', icon: 'update' },
+								{ id: 'single', title: "Single Shot", icon: 'alarm-check' },
+								{ id: 'interval', title: "Interval", icon: 'timer-sand' },
+								{ id: 'keyboard', title: "Keyboard", icon: 'keyboard-outline' },
+								{ id: 'startup', title: "Startup", icon: 'desktop-classic' },
+								{ id: 'catchup', title: "Catch-Up", icon: 'calendar-refresh-outline', group: "Modifiers" },
+								{ id: 'nth', title: "Every Nth", icon: 'transit-skip' },
+								{ id: 'range', title: "Range", icon: 'calendar-range-outline' },
+								{ id: 'blackout', title: "Blackout", icon: 'circle' },
+								{ id: 'delay', title: "Delay", icon: 'chat-sleep-outline' },
+								{ id: 'precision', title: "Precision", icon: 'progress-clock' },
+								{ id: 'quiet', title: "Quiet", icon: 'volume-mute' },
+								{ id: 'plugin', title: "Plugin", icon: 'power-plug' }
+							].concat(
+								this.buildOptGroup( scheduler_plugins, "Trigger Plugins:", 'power-plug-outline', 'p_' )
+							),
+							value: args.trigger || '',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// action
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-gesture-tap">&nbsp;</i>Action:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_action',
+							title: 'Select Action',
+							options: [ ['', 'Any Action'] ].concat( config.ui.action_type_menu ).concat(
+								this.buildOptGroup( action_plugins, "Action Plugins:", 'power-plug-outline', 'p_' )
+							),
+							value: args.action || '',
+							'data-shrinkwrap': 1
+						})
+					});
+				html += '</div>';
+				
+				// user
+				html += '<div class="form_cell">';
+					html += this.getFormRow({
+						label: '<i class="icon mdi mdi-account">&nbsp;</i>User:',
+						content: this.getFormMenuSingle({
+							id: 'fe_el_username',
+							title: 'Select User',
+							options: [['', 'Any User']].concat( app.users.map( function(user) {
+								return { id: user.username, title: user.full_name, icon: user.icon || '' };
+							} ) ),
+							value: args.username || '',
+							default_icon: 'account',
+							'data-shrinkwrap': 1,
+							'data-private': 1
+						})
+					});
+				html += '</div>';
+				
+			html += '</div>'; // form_grid
+		
+		// buttons at bottom
+		html += '<div class="search_buttons" style="padding:0">';
+			html += '<div id="btn_search_opts" class="button" onClick="$P().toggleSearchOpts()"><i>&nbsp;</i><span>Options<span></div>';
+			html += '<div id="btn_el_reset" class="button" style="display:none" onClick="$P().resetFilters()"><i class="mdi mdi-undo-variant">&nbsp;</i><span>Reset</span></div>';
+			html += '<div class="button primary" onClick="$P().applyTableFilters(true)"><i class="mdi mdi-magnify">&nbsp;</i><span>Search</span></div>';
+		html += '</div>'; // search_buttons
+		
+		html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		html += '<div id="d_search_results"></div>';
+		
+		this.div.html( html ).buttonize();
+		this.addPageDescription( (args.plugin == '_workflow') ? 'Workflows' : 'Events' );
+		
+		// MultiSelect.init( this.div.find('#fe_el_tags') );
+		SingleSelect.init( this.div.find('#fe_el_status, #fe_el_category, #fe_el_target, #fe_el_plugin, #fe_el_tag, #fe_el_trigger, #fe_el_username, #fe_el_action') );
+		// $('.header_search_widget').hide();
+		this.setupSearchOpts();
+		
+		this.div.find('#fe_el_tag, #fe_el_status, #fe_el_category, #fe_el_target, #fe_el_plugin, #fe_el_trigger, #fe_el_username, #fe_el_action').on('change', function() {
+			self.applyTableFilters(true);
+		});
+		
+		$('#fe_el_search').on('keydown', function(event) {
+			// capture enter key
+			if (event.keyCode == 13) {
+				event.preventDefault();
+				self.applyTableFilters(true);
+			}
+		});
+		
+		// reset max events (dynamic pagination)
+		this.eventsPerPage = config.events_per_page;
+		
+		var events = app.events;
+		
+		// use events in app cache
+		this.receive_events({
+			code: 0,
+			rows: events,
+			list: { length: events.length }
+		});
+	}
+	
+	receive_events(resp) {
+		// receive all events from server, render them sorted
+		var self = this;
+		var args = this.args;
+		var html = '';
+		
+		// create our own copy with the sortable bits we need for the table
+		var cat_map = obj_array_to_hash( app.categories, 'id' );
+		var plug_map = obj_array_to_hash( app.plugins, 'id' );
+		var grp_map = obj_array_to_hash( app.groups, 'id' );
+		
+		var getNiceTargetListText = function(targets) {
+			// just the text, ma'am
+			return (targets || []).map( function(target) {
+				if (target in grp_map) return grp_map[target].title;
+				if (target in app.servers) return app.servers[target].title || app.formatHostname(app.servers[target].hostname);
+				return target;
+			} ).join(', ') || 'zzzzzzzz';
+		};
+		
+		this.events = (resp.rows || []).map( function(event) {
+			var category = cat_map[ event.category ] || { sort_order: 0 };
+			var plugin = plug_map[ event.plugin ] || { title: event.plugin };
+			
+			return {
+				...event,
+				cat_sort: category.sort_order,
+				tag_sort: self.getNiceTagListText(event.tags || []),
+				plug_sort: (event.plugin == '_workflow') ? 'zzzzzzzz' : plugin.title,
+				target_sort: getNiceTargetListText(event.targets || []),
+				timing_sort: summarize_event_timings(event),
+				status_sort: self.getNiceEventStatusText(event)
+			};
+		} );
+		
+		html += '<div class="box" id="d_el_results">';
+		html += '<div class="box_title">';
+			html += (args.plugin == '_workflow') ? 'Workflow List' : 'Event List';
+		html += '</div>';
+		html += '<div class="box_content table">';
+		
+		// NOTE: Don't change these columns without also changing the responsive css column collapse rules in style.css
+		var table_opts = {
+			id: 't_events',
+			item_name: 'event',
+			sort_by: 'title',
+			sort_dir: 1,
+			filter: this.isRowVisible.bind(this),
+			column_ids: ['title', 'cat_sort', 'tag_sort', 'plug_sort', 'target_sort', 'timing_sort', 'status_sort', '' ],
+			column_labels: ['Event Title', 'Category', 'Tags', 'Plugin', 'Targets', 'Triggers', 'Status', 'Actions']
+		};
+		
+		html += this.getSortableTable( this.events, table_opts, function(item) {
+			var classes = [];
+			var cat = cat_map[ item.category ] || { title: item.category };
+			
+			var actions = [];
+			actions.push( `<button class="link" data-event="${item.id}" onClick="$P().do_run_event_from_list(this)"><b>Run</b></button>` );
+			actions.push( `<button class="link" data-event="${item.id}" onClick="$P().do_edit_event_from_list(this)"><b>Edit</b></button>` );
+			actions.push( `<button class="link" data-event="${item.id}" onClick="$P().go_hist_from_list(this)"><b>History</b></button>` );
+			
+			var tds = [
+				'<span style="font-weight:bold">' + self.getNiceEvent(item, true) + '</span>',
+				self.getNiceCategory(item.category, true),
+				self.getNiceTagList(item.tags || [], true, ', '),
+				(item.plugin == '_workflow') ? '(Workflow)' : self.getNicePlugin(item.plugin, true),
+				self.getNiceTargetList(item.targets, true),
+				item.timing_sort,
+				
+				'<div id="d_el_jt_status_' + item.id + '">' + self.getNiceEventStatus(item) + '</div>',
+				
+				actions.join(' | ')
+			];
+			
+			if (!item.enabled) classes.push('disabled');
+			if (cat.color) classes.push( 'clr_' + cat.color );
+			if (classes.length) tds.className = classes.join(' ');
+			return tds;
+		}); // getSortableTable
+		
+		html += '</div>'; // box_content
+		
+		html += '<div class="box_buttons">';
+			html += '<div class="button tablet_collapse" onClick="$P().doFileImportPrompt()"><i class="mdi mdi-cloud-upload-outline">&nbsp;</i><span>Import File...</span></div>';
+			html += '<div class="button tablet_collapse secondary" onClick="$P().go_history()"><i class="mdi mdi-history">&nbsp;</i><span>Revision History...</span></div>';
+			if (this.args.plugin && (this.args.plugin == '_workflow')) {
+				html += '<div class="button phone_collapse default" id="btn_new" onClick="$P().go_new_workflow()"><i class="mdi mdi-clipboard-plus-outline">&nbsp;</i><span>New Workflow...</span></div>';
+			}
+			else {
+				html += '<div class="button phone_collapse default" id="btn_new" onClick="$P().edit_event(-1)"><i class="mdi mdi-plus-circle-outline">&nbsp;</i><span>New Event...</span></div>';
+			}
+		html += '</div>'; // box_buttons
+		
+		html += '</div>'; // box
+		
+		var is_floater_vis = !!this.div.find('.box_buttons.floater').length;
+		
+		this.div.find('#d_search_results').html( html ).buttonize();
+		this.applyTableFilters();
+		this.setupBoxButtonFloater(is_floater_vis);
+		
+		// SingleSelect.init( this.div.find('#fe_ee_filter') );
+		// MultiSelect.init( this.div.find('#fe_ee_filter') );
+	}
+	
+	do_new_from_list() {
+		// jump to new event or workflow, depending on context
+		if (this.args.plugin && (this.args.plugin == '_workflow')) this.go_new_workflow();
+		else this.edit_event(-1);
+	}
+	
+	go_new_workflow() {
+		// nav to new workflow page
+		Nav.go( '#Workflows?sub=new' );
+	}
+	
+	handleStatusUpdateList(data) {
+		// received status update from server
+		var self = this;
+		
+		// only redraw status fields if jobs changed
+		if (!data.jobsChanged) return;
+		
+		this.events.forEach( function(item, idx) {
+			self.div.find('#d_el_jt_status_' + item.id).html( self.getNiceEventStatus(item) );
+		} );
+	}
+	
+	getNiceEventStatusText(event) {
+		// get text event status (active jobs or last result)
+		var num_jobs = 0;
+		var last_job_id = '';
+		for (var job_id in app.activeJobs) {
+			var job = app.activeJobs[job_id];
+			if (job.event == event.id) { num_jobs++; last_job_id = job.id; }
+		}
+		var nice_status = 'Idle';
+		var event_state = get_path( app.state, 'events/' + event.id );
+		
+		if (num_jobs) {
+			nice_status = '' + num_jobs + ' Active';
+		}
+		else if (!num_jobs && event_state && event_state.last_job) {
+			var jargs = this.getJobResultArgs({ id: event_state.last_job, code: event_state.last_code, final: true });
+			nice_status = jargs.text;
+		}
+		
+		return nice_status;
+	}
+	
+	applyTableFilters(reset_max) {
+		// filters and/or search query changed -- re-filter table
+		var self = this;
+		var args = this.args;
+		var num_filters = 0;
+		
+		// single-selects
+		['search', 'status', 'category', 'target', 'plugin', 'tag', 'trigger', 'username', 'action'].forEach( function(key) {
+			var value = $('#fe_el_' + key).val();
+			if (value.length) { args[key] = value; num_filters++; }
+			else delete args[key];
+		} );
+		
+		var is_filtered = (num_filters > 0);
+		
+		this.updateTableRows('t_events');
+		this.updateBoxButtonFloaterState();
+		
+		// show or hide reset button
+		if (is_filtered) this.div.find('#btn_el_reset').show();
+		else this.div.find('#btn_el_reset').hide();
+		
+		if (reset_max) {
+			// do history.replaceState jazz here
+			// don't mess up initial visit href
+			var query = deep_copy_object(args);
+			delete query.sub;
+			
+			var url = '#Events' + (num_keys(query) ? compose_query_string(query) : '');
+			history.pushState( null, '', url );
+			Nav.loc = url.replace(/^\#/, '');
+			// Nav.go(url);
+			
+			// magic trick: replace link in sidebar for Events / Workflows
+			$('#tab_' + this.originTab).attr( 'href', url );
+		}
+	}
+	
+	resetFilters() {
+		// reset all filters to default and re-search
+		Nav.go( this.selfNav({}) );
+	}
+	
+	isRowVisible(item) {
+		// check if row should be filtered using args
+		var args = this.args;
+		var num_filters = 0;
+		
+		['search', 'status', 'category', 'target', 'plugin', 'trigger', 'username', 'action', 'tag'].forEach( function(key) {
+			if (key in args) num_filters++;
+		} );
+		
+		var is_filtered = (num_filters > 0);
+		
+		if (!is_filtered) {
+			// no filters, so we can apply user collapse/expand logic here
+			var hidden_cats = app.prefs.hidden_cats || {};
+			if (hidden_cats[ item.category ]) return false; // hide (by user)
+			return true; // show
+		}
+		
+		// allow keywords to search titles, usernames, notes, targets, and trigger plugins
+		if (('search' in args) && args.search.length) {
+			var words = [item.title, item.username, item.notes].concat(item.targets);
+			if (words.join(' ').toLowerCase().indexOf(args.search.toLowerCase()) == -1) return false; // hide
+		}
+		
+		// status
+		if ('status' in args) {
+			if ((args.status == 'enabled') && !item.enabled) return false; // hide
+			if ((args.status == 'disabled') && item.enabled) return false; // hide
+		}
+		
+		// category
+		if ('category' in args) {
+			if (item.category != args.category) return false; // hide
+		}
+		
+		// target
+		if ('target' in args) {
+			if (!item.targets.includes(args.target)) return false; // hide
+		}
+		
+		// plugin
+		if ('plugin' in args) {
+			if (item.plugin != args.plugin) return false; // hide
+		}
+		
+		// tags
+		if ('tag' in args) {
+			if (!item.tags || !item.tags.includes(args.tag)) return false; // hide
+		}
+		
+		// username
+		if ('username' in args) {
+			if (item.username != args.username) return false; // hide
+		}
+		
+		// trigger
+		if ('trigger' in args) {
+			// types: manual, schedule, interval, startup, single, plugin, catchup, nth, range, blackout, delay, precision
+			var types = {};
+			(item.triggers || []).filter( function(trigger) { return trigger.enabled; } ).forEach( function(trigger) { 
+				types[trigger.type || 'N/A'] = 1; 
+				if (trigger.type == 'plugin') types[ 'p_' + trigger.plugin_id ] = 1;
+			} );
+			if (!types[args.trigger]) return false; // hide
+		}
+		
+		// action
+		if ('action' in args) {
+			var types = {};
+			(item.actions || []).filter( function(action) { return action.enabled; } ).forEach( function(action) { 
+				types[action.type || 'N/A'] = 1; 
+				if (action.type == 'plugin') types[ 'p_' + action.plugin_id ] = 1;
+			} );
+			if (!types[args.action]) return false; // hide
+		}
+		
+		return true; // show
+	}
+	
+	do_edit_event_from_list(elem) {
+		// edit event from list
+		var id = $(elem).data('event');
+		var event = find_object( this.events, { id } );
+		
+		if (event.type == 'workflow') Nav.go( '#Workflows?sub=edit&id=' + event.id );
+		else Nav.go( '#Events?sub=edit&id=' + event.id );
+	}
+	
+	do_run_event_from_list(elem) {
+		// run event from list
+		var id = $(elem).data('event');
+		var event = find_object( this.events, { id } );
+		this.doRunEvent( event );
+	}
+	
+	do_run_current_event() {
+		// run current event
+		this.doRunEvent( this.event );
+	}
+	
+	edit_event(idx) {
+		// jump to edit sub
+		if (idx > -1) {
+			if (this.events[idx].type == 'workflow') Nav.go( '#Workflows?sub=edit&id=' + this.events[idx].id );
+			else Nav.go( '#Events?sub=edit&id=' + this.events[idx].id );
+		}
+		else Nav.go( '#Events?sub=new' );
+	}
+	
+	do_clone_from_list(idx) {
+		// make copy of event and jump over to new
+		var clone = deep_copy_object( this.events[idx] );
+		clone.title = "Copy of " + clone.title;
+		delete clone.id;
+		delete clone.created;
+		delete clone.modified;
+		delete clone.revision;
+		delete clone.username;
+		
+		if (clone.type == 'workflow') {
+			$P('Workflows').clone = clone;
+			Nav.go('Workflows?sub=new');
+		}
+		else {
+			this.clone = clone;
+			Nav.go('Events?sub=new');
+		}
+	}
+	
+	go_hist_from_list(elem) {
+		// jump over to rev history for specific event
+		var id = $(elem).data('event');
+		Nav.go('Search?event=' + id);
+	}
+	
+	delete_event(idx) {
+		// delete event from search results
+		this.event = this.events[idx];
+		this.workflow = this.event.workflow || undefined;
+		this.show_delete_event_dialog();
+	}
+	
+	gosub_view(args) {
+		// view event summary / stats / history
+		var html = '';
+		var event = this.event = find_object( app.events, { id: args.id } );
+		if (!event) return this.doFullPageError("Event not found: " + args.id);
+		
+		this.workflow = this.event.workflow || null;
+		
+		var is_workflow = (event.type == 'workflow');
+		var default_icon = is_workflow ? 'clipboard-flow-outline' : 'file-clock-outline';
+		var icon = event.icon || default_icon;
+		var edit_btn_text = is_workflow ? 'Edit Workflow...' : 'Edit Event...';
+		var thing = is_workflow ? 'Workflow' : 'Event';
+		
+		if (is_workflow) {
+			app.setHeaderNav([
+				{ icon: 'clipboard-flow-outline', loc: '#Events?plugin=_workflow', title: 'Workflows' },
+				{ icon: icon, title: event.title }
+			]);
+			app.highlightTab( 'Workflows' );
+		}
+		else {
+			app.setHeaderNav([
+				{ icon: 'calendar-clock', loc: '#Events?sub=list', title: 'Events' },
+				{ icon: icon, title: event.title }
+			]);
+			app.highlightTab( 'Events' );
+		}
+		
+		// app.setHeaderTitle( '<i class="mdi mdi-calendar-search">&nbsp;</i>Event Details' );
+		app.setWindowTitle( `Viewing ${thing} "${event.title}"` );
+		
+		html += '<div class="box">';
+			html += '<div class="box_title">';
+				// html += '<i class="mdi mdi-' + icon + '">&nbsp;</i>' + event.title;
+				if (!event.enabled) html += `<span style="color:var(--red);">${thing} Disabled</span>`;
+				else html += `${thing} Summary`;
+				
+				// html += '<div class="button right danger" onClick="$P().show_delete_event_dialog()"><i class="mdi mdi-trash-can-outline">&nbsp;</i>Delete...</div>';
+				html += '<div class="button default right phone_collapse" onClick="$P().do_edit_from_view()" title="' + edit_btn_text + '"><i class="mdi mdi-file-edit-outline">&nbsp;</i><span>' + edit_btn_text + '</span></div>';
+				if (event.enabled) html += '<div class="button secondary right mobile_collapse" onClick="$P().do_run_current_event()" title="Run Now..." ><i class="mdi mdi-run-fast">&nbsp;</i><span>Run Now...</span></div>';
+				
+				var is_fav = !!(app.user.favorites && app.user.favorites.events && app.user.favorites.events.includes(event.id));
+				html += '<div id="btn_ve_fav" class="button right mobile_collapse ' + (is_fav ? 'favorite' : '') + '" onClick="$P().do_toggle_favorite()" title="Toggle Favorite"><i class="mdi mdi-'+(is_fav ? 'heart' : 'heart-plus-outline')+'">&nbsp;</i><span>Favorite</span></div>';
+				
+				html += '<div class="clear"></div>';
+			html += '</div>'; // title
+			
+			html += '<div class="box_content table">';
+				html += '<div class="summary_grid">';
+					
+					// row 1
+					html += '<div>';
+						html += `<div class="info_label">${thing} ID</div>`;
+						html += '<div class="info_value monospace">' + this.getNiceCopyableID(event.id) + '</div>';
+					html += '</div>';
+					
+					html += '<div>';
+						html += `<div class="info_label">${thing} Title</div>`;
+						html += '<div class="info_value">' + this.getNiceEvent(event) + '</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Category</div>';
+						html += '<div class="info_value">' + this.getNiceCategory(event.category, true) + '</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Tags</div>';
+						html += '<div class="info_value">' + this.getNiceTagList(event.tags, true, ', ') + '</div>';
+					html += '</div>';
+					
+					// row 2
+					html += '<div>';
+						html += '<div class="info_label">Author</div>';
+						html += '<div class="info_value">' + this.getNiceUser(event.username, true) + '</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Plugin</div>';
+						html += '<div class="info_value">' + this.getNicePlugin(event.plugin, true) + '</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Targets</div>';
+						html += '<div class="info_value">' + this.getNiceTargetList(event.targets, true) + '</div>';
+					html += '</div>';
+					
+					html += '<div>';
+						html += '<div class="info_label">Algorithm</div>';
+						html += '<div class="info_value">' + this.getNiceAlgo(event.algo) + '</div>';
+					html += '</div>';
+					
+					// row 3
+					html += '<div>';
+						html += '<div class="info_label">Avg Elapsed</div>';
+						html += '<div class="info_value" id="d_ve_avg_elapsed">...</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Avg CPU</div>';
+						html += '<div class="info_value" id="d_ve_avg_cpu">...</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Avg Mem</div>';
+						html += '<div class="info_value" id="d_ve_avg_mem">...</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Avg Log Size</div>';
+						html += '<div class="info_value" id="d_ve_log_size">...</div>';
+					html += '</div>';
+					
+					// row 4
+					html += '<div>';
+						html += '<div class="info_label">Success Rate</div>';
+						html += '<div class="info_value" id="d_ve_success_rate">...</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Last Result</div>';
+						html += '<div class="info_value" id="d_ve_last_result">...</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Last Run</div>';
+						html += '<div class="info_value" id="d_ve_last_run">...</div>';
+					html += '</div>';
+				
+					html += '<div>';
+						html += '<div class="info_label">Next Run</div>';
+						html += '<div class="info_value" id="d_ve_next_run">...</div>';
+					html += '</div>';
+					
+				html += '</div>'; // summary grid
+				
+				if (event.notes) {
+					html += '<div class="summary_grid" style="grid-template-columns: 1fr; margin-top:30px;"><div>';
+					html += `<div class="info_label">${thing} Notes</div>`;
+					html += '<div class="info_value overflow" style="font-weight:normal; line-height:16px;">' + event.notes.replace(/\n/g, '<br>') + '</div>';
+					html += '</div></div>';
+				}
+			html += '</div>'; // box content
+		html += '</div>'; // box
+		
+		// event details
+		html += '<div class="box_grid">';
+			html += '<div id="d_ve_trigger_summary">' + this.getTriggerDetails() + '</div>';
+			html += '<div>' + this.getActionDetails() + '</div>';
+			html += '<div>' + this.getLimitDetails() + '</div>';
+		html += '</div>';
+		
+		// workflow preview
+		if (event.workflow) {
+			html += '<div class="box">';
+			html += '<div class="box_content">';
+			html += '<div class="wf_container preview" id="d_wf_container" style="height:50vh; min-height:400px;">';
+			
+			html += `<div class="wf_grid_header">
+				<div class="wf_title left"><i class="mdi mdi-clipboard-flow-outline">&nbsp;</i>Workflow Map</div>
+				<div class="button secondary right" onClick="$P().goEditWorkflow()"><i class="mdi mdi-clipboard-edit-outline">&nbsp;</i>Edit...</div>
+				<div class="clear"></div>
+			</div>`;
+			
+			html += `<div class="wf_grid_footer">
+				<div class="button icon left" onClick="$P().wfZoomAuto()" title="Zoom to fit"><i class="mdi mdi-home"></i></div>
+				<div class="button icon left" id="d_btn_wf_zoom_out" onClick="$P().wfZoomOut()" title="Zoom out"><i class="mdi mdi-magnify-minus"></i></div>
+				<div class="button icon left" id="d_btn_wf_zoom_in" onClick="$P().wfZoomIn()" title="Zoom in"><i class="mdi mdi-magnify-plus"></i></div>
+				<div class="wf_zoom_msg left tablet_hide"></div>
+				<div class="clear"></div>
+			</div>`;
+			
+			html += '</div>'; // wf_container
+			html += '</div>'; // box_content
+			html += '</div>'; // box
+		} // workflow
+		
+		// plugin parameters
+		html += '<div class="box toggle" id="d_ve_params" style="display:none">';
+			html += '<div class="box_title">';
+				html += '<i></i><span></span>';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				// html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		// active jobs
+		html += '<div class="box" id="d_ve_active">';
+			html += '<div class="box_title">';
+				html += '<span>Active Jobs</span>';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		// queued jobs
+		html += '<div class="box" id="d_ve_queued" style="display:none">';
+			html += '<div class="box_title">';
+				html += '<span>Queued Jobs</span>';
+				html += '<div class="button right danger" onClick="$P().do_flush_queue()"><i class="mdi mdi-trash-can-outline">&nbsp;</i>Flush Queue</div>';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				// html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		// history table
+		html += '<div class="box" id="d_ve_history">';
+			html += '<div class="box_title">';
+				
+				html += '<div class="box_title_widget" style="overflow:visible; min-width:120px; max-width:200px; font-size:13px;">' + this.getFormMenuSingle({
+					id: 'fe_ve_filter',
+					title: 'Filter job list',
+					options: this.buildJobFilterOpts(),
+					value: args.filter || '',
+					onChange: '$P().applyHistoryFilters()',
+					'data-shrinkwrap': 1
+				}) + '</div>';
+				
+				html += '<span>Completed Jobs</span>';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		// graphs
+		html += '<div class="box" id="d_ve_graphs" style="display:none;">';
+			html += '<div class="box_content">';
+				
+				html += '<div style="margin-bottom:20px"><canvas id="c_ve_perf" class="chart" style="width:100%; height:250px;"></canvas></div>';
+				
+				html += '<div class="chart_grid_horiz medium">';
+					html += '<div><canvas id="c_ve_cpu" class="chart"></canvas></div>';
+					html += '<div><canvas id="c_ve_mem" class="chart"></canvas></div>';
+					html += '<div><canvas id="c_ve_disk" class="chart"></canvas></div>';
+					html += '<div><canvas id="c_ve_net" class="chart"></canvas></div>';
+				html += '</div>';
+			html += '</div>';
+		html += '</div>';
+		
+		// job day graph
+		html += '<div class="box" id="d_job_day_graph" style="display:none">';
+			html += '<div class="box_title">';
+				html += '<span>Job History Day Graph</span>';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		// upcoming jobs
+		html += '<div class="box" id="d_upcoming_jobs">';
+			html += '<div class="box_title">';
+				html += 'Upcoming Jobs';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		// revision history
+		html += '<div class="box" id="d_ve_revisions">';
+			html += '<div class="box_title">';
+				html += 'Revision History';
+			html += '</div>';
+			html += '<div class="box_content table">';
+				html += '<div class="loading_container"><div class="loading"></div></div>';
+			html += '</div>'; // box_content
+		html += '</div>'; // box
+		
+		this.div.html(html).buttonize();
+		
+		SingleSelect.init( this.div.find('#fe_ve_filter') );
+		
+		this.setupHistoryCharts();
+		this.fetchJobHistory();
+		this.getUpcomingJobs([ this.event ]);
+		this.renderActiveJobs();
+		this.getQueuedJobs();
+		this.renderPluginParams('#d_ve_params');
+		this.setupToggleBoxes();
+		this.fetchRevisionHistory();
+		this.setupJobHistoryDayGraph();
+		if (is_workflow) this.setupWorkflow();
+	}
+	
+	do_toggle_favorite() {
+		// toggle the current event in user favorites
+		var self = this;
+		var event = this.event;
+		var user = app.user;
+		
+		if (!user.favorites) user.favorites = {};
+		if (!user.favorites.events) user.favorites.events = [];
+		
+		var is_fav_idx = user.favorites.events.indexOf(event.id);
+		if (is_fav_idx > -1) user.favorites.events.splice(is_fav_idx, 1);
+		else user.favorites.events.push(event.id);
+		
+		app.api.post( 'app/user_settings', { favorites: user.favorites }, function(resp) {
+			if (is_fav_idx == -1) {
+				// added fav
+				app.showMessage('info', "The event has been added to your favorites." + ((user.favorites.events.length == 1) ? ' You can view these on the Dashboard.' : ''), 8, 'Dashboard');
+				self.div.find('#btn_ve_fav').addClass('favorite').find('i.mdi').removeClass('mdi-heart-plus-outline').addClass('mdi-heart');
+			}
+			else {
+				// removed fav
+				app.showMessage('info', "The event has been removed from your favorites.");
+				self.div.find('#btn_ve_fav').removeClass('favorite').find('i.mdi').removeClass('mdi-heart').addClass('mdi-heart-plus-outline');
+			}
+		});
+	}
+	
+	goEditWorkflow() {
+		// jump over to editing workflow (scroll it too)
+		Nav.go(`#Workflows?sub=edit&id=${this.event.id}&scroll=bottom`);
+	}
+	
+	getTriggerDetails() {
+		// get trigger details in compact table (read-only)
+		var self = this;
+		var html = '';
+		var cols = ['Description', 'Type'];
+		
+		html += '<div class="box_unit_title">Triggers</div>';
+		
+		// custom sort, and only enabled ones
+		var rows = this.getSortedTriggers().filter( function(trigger) { return trigger.enabled; } );
+		
+		var targs = {
+			rows: rows,
+			cols: cols,
+			data_type: 'item',
+			class: 'data_grid scroll scroll_shadows',
+			empty_msg: "(Disabled)",
+			grid_template_columns: 'auto auto'
+		};
+		
+		html += this.getCompactGrid(targs, function(item, idx) {
+			var { nice_icon, nice_type, nice_desc } = self.getTriggerDisplayArgs(item);
+			
+			var tds = [
+				'<div class="nowrap ellip">' + nice_desc.replace(/\&nbsp\;/g, '') + '</div>',
+				'<div class="td_big nowrap">' + nice_icon + nice_type + '</div>',
+			];
+			
+			if (!item.enabled) tds.className = 'disabled';
+			return tds;
+		} ); // getCompactGrid
+		
+		return html;
+	}
+	
+	getActionDetails() {
+		// get action details in compact table (read-only)
+		var self = this;
+		var html = '';
+		var rows = this.event.actions.filter( function(action) { return action.enabled; } );
+		var cols = ['Condition', 'Type', 'Description'];
+		
+		html += '<div class="box_unit_title">Job Actions</div>';
+		
+		var targs = {
+			rows: rows,
+			cols: cols,
+			data_type: 'action',
+			class: 'data_grid scroll scroll_shadows',
+			grid_template_columns: 'auto auto auto'
+		};
+		
+		// add inherited category actions
+		var category = find_object( app.categories, { id: this.event.category } ) || {};
+		(category.actions || []).forEach( function(action) {
+			if (action.enabled) rows.push({ ...action, source: 'category' });
+		} );
+		
+		// add universal actions (not hidden)
+		var temp_event_type = this.workflow ? 'workflow' : 'default';
+		config.job_universal_actions[temp_event_type].forEach( function(action) {
+			if (action.enabled && action.condition && !action.hidden) rows.push({ ...action, source: 'universal' });
+		} );
+		
+		html += this.getCompactGrid(targs, function(item, idx) {
+			var disp = self.getJobActionDisplayArgs(item);
+			var disp_cond_icon = disp.condition.icon;
+			if (item.source == 'category') disp_cond_icon = 'lock-outline';
+			else if (item.source == 'universal') disp_cond_icon = 'lock';
+			var tooltip = item.source ? `title="(Inherited from ${item.source})"` : '';
+			
+			var tds = [
+				'<div class="td_big nowrap" ' + tooltip + '><i class="mdi mdi-' + disp_cond_icon + '"></i>' + disp.condition.title + '</div>',
+				'<div class="td_big ellip" ' + tooltip + '><i class="mdi mdi-' + disp.icon + '">&nbsp;</i>' + disp.type + '</div>',
+				'<div class="ellip" ' + tooltip + '>' + disp.desc + '</div>'
+			];
+			
+			if (item.source == 'category') tds.className = 'src_cat';
+			else if (item.source == 'universal') tds.className = 'src_uni';
+			else if (!item.enabled) tds.className = 'disabled';
+			return tds;
+		} ); // getCompactGrid
+		
+		return html;
+	}
+	
+	getLimitDetails() {
+		// get resource limit details in compact table (read-only)
+		var self = this;
+		var html = '';
+		var rows = this.event.limits.filter( function(limit) { return limit.enabled; } );
+		var cols = ['Limit', 'Description'];
+		
+		html += '<div class="box_unit_title">Resource Limits</div>';
+		
+		var targs = {
+			rows: rows,
+			cols: cols,
+			data_type: 'limit',
+			class: 'data_grid scroll scroll_shadows',
+			grid_template_columns: 'auto auto'
+		};
+		
+		// add inherited category limits
+		var category = find_object( app.categories, { id: this.event.category } ) || {};
+		(category.limits || []).forEach( function(limit) {
+			if (limit.enabled) rows.push({ ...limit, source: 'category' });
+		} );
+		
+		// add universal limits (not hidden)
+		var temp_event_type = this.workflow ? 'workflow' : 'default';
+		config.job_universal_limits[temp_event_type].forEach( function(limit) {
+			if (limit.enabled && limit.type && !limit.hidden) rows.push({ ...limit, source: 'universal' });
+		} );
+		
+		html += this.getCompactGrid(targs, function(item, idx) {
+			var { nice_title, nice_desc, icon } = self.getResLimitDisplayArgs(item);
+			if (item.source == 'category') icon = 'lock-outline';
+			else if (item.source == 'universal') icon = 'lock';
+			var tooltip = item.source ? `title="(Inherited from ${item.source})"` : '';
+			
+			var tds = [
+				'<div class="td_big nowrap" ' + tooltip + '><i class="mdi mdi-' + icon + '"></i>' + nice_title + '</div>',
+				'<div class="nowrap ellip" ' + tooltip + '>' + nice_desc + '</div>'
+			];
+			
+			if (item.source == 'category') tds.className = 'src_cat';
+			else if (item.source == 'universal') tds.className = 'src_uni';
+			else if (!item.enabled) tds.className = 'disabled';
+			return tds;
+		} ); // getCompactGrid
+		
+		return html;
+	}
+	
+	do_edit_from_view() {
+		// jump to edit from view page
+		Nav.go( (this.event.workflow ? '#Workflows' : '#Events') + '?sub=edit&id=' + this.event.id );
+	}
+	
+	do_flush_queue() {
+		// flush job queue after confirmation
+		var self = this;
+		var msg = 'Are you sure you want to flush the job queue for the current event?  All pending jobs will be silently deleted without triggering completion actions.';
+		
+		Dialog.confirmDanger( 'Flush Job Queue', msg, ['trash-can', 'Flush'], function(result) {
+			if (!result) return;
+			app.clearError();
+			Dialog.showProgress( 1.0, "Flushing Queue..." );
+			
+			// reset pagination -- WS broadcast will trigger a table redraw
+			self.queueOffset = 0;
+			
+			app.api.post( 'app/flush_event_queue', { id: self.event.id }, function(resp) {
+				app.cacheBust = hires_time_now();
+				Dialog.hideProgress();
+				app.showMessage('success', "The job queue was successfully flushed.");
+				if (!self.active) return; // sanity
+			} ); // api.post
+		} ); // confirm
+	}
+	
+	getQueuedJobs() {
+		// fetch queued jobs from server
+		var self = this;
+		if (!this.queueOffset) this.queueOffset = 0;
+		
+		var opts = {
+			event: this.event.id,
+			state: 'queued',
+			offset: this.queueOffset,
+			limit: this.args.limit
+		};
+		app.api.get( 'app/get_active_jobs', opts, function(resp) {
+			self.receiveQueuedJobs(resp);
+		});
+	}
+	
+	receiveQueuedJobs(resp) {
+		// receive queued jobs from server
+		var self = this;
+		var html = '';
+		
+		// make sure page is still active (API may be slow)
+		if (!this.active) return;
+		
+		if (!resp.rows) resp.rows = [];
+		this.queuedJobs = resp.rows;
+		
+		if (!resp.rows.length) {
+			this.div.find('#d_ve_queued').hide().find('> .box_content').html('');
+			return;
+		}
+		
+		var grid_args = {
+			resp: resp,
+			cols: ['Job ID', 'State', 'Source', 'Target', 'Queued', 'Elapsed', 'Actions'],
+			data_type: 'job',
+			offset: this.queueOffset,
+			limit: this.args.limit,
+			class: 'data_grid job_queue_grid',
+			pagination_link: '$P().jobQueueNav'
+		};
+		
+		html += this.getPaginatedGrid( grid_args, function(job, idx) {
+			return [
+				'<b>' + self.getNiceJob(job, true) + '</b>',
+				self.getNiceJobState(job),
+				self.getNiceJobSource(job),
+				self.getNiceTargetList(job.targets),
+				self.getShortDateTime( job.started ),
+				'<div id="d_ve_jt_elapsed_' + job.id + '">' + self.getNiceJobElapsedTime(job, true) + '</div>',
+				'<button class="link danger" onClick="$P().doAbortJob(\'' + job.id + '\')"><b>Abort Job</b></button>'
+			];
+		} );
+		
+		this.div.find('#d_ve_queued').show().find('> .box_content').removeClass('loading').html( html );
+	}
+	
+	jobQueueNav(offset) {
+		// user clicked on queued job pagination nav
+		this.queueOffset = offset;
+		this.div.find('#d_ve_queued > .box_content').addClass('loading');
+		this.getQueuedJobs();
+	}
+	
+	renderActiveJobs() {
+		// show all active jobs for event
+		var self = this;
+		var html = '';
+		
+		var rows = Object.values(app.activeJobs).filter( function(job) { 
+			return (job.event == self.event.id) && (job.type != 'adhoc')
+		} ).sort( function(a, b) {
+			return (a.started < b.started) ? 1 : -1;
+		} );
+		
+		if (!this.activeOffset) this.activeOffset = 0;
+		
+		var resp = {
+			rows: rows.slice( this.activeOffset, this.activeOffset + this.args.limit ),
+			list: { length: rows.length }
+		};
+		
+		var grid_args = {
+			resp: resp,
+			cols: ['Job ID', 'Server', 'State', 'Elapsed', 'Progress', 'Remaining', 'Actions'],
+			data_type: 'job',
+			offset: this.activeOffset,
+			limit: this.args.limit,
+			class: 'data_grid ve_active_grid',
+			pagination_link: '$P().jobActiveNav',
+			empty_msg: 'No active jobs found.'
+		};
+		
+		html += this.getPaginatedGrid( grid_args, function(job, idx) {
+			return [
+				'<b>' + self.getNiceJob(job, true) + '</b>',
+				// self.getNiceJobSource(job),
+				// self.getShortDateTime( job.started ),
+				'<div id="d_ve_jt_server_' + job.id + '">' + self.getNiceServer(job.server, true) + '</div>',
+				'<div id="d_ve_jt_state_' + job.id + '">' + self.getNiceJobState(job) + '</div>',
+				'<div id="d_ve_jt_elapsed_' + job.id + '">' + self.getNiceJobElapsedTime(job, false) + '</div>',
+				'<div id="d_ve_jt_progress_' + job.id + '">' + self.getNiceJobProgressBar(job) + '</div>',
+				'<div id="d_ve_jt_remaining_' + job.id + '">' + self.getNiceJobRemainingTime(job, false) + '</div>',
+				
+				'<button class="link danger" onClick="$P().doAbortJob(\'' + job.id + '\')"><b>Abort Job</b></button>'
+			];
+		} );
+		
+		this.div.find('#d_ve_active > .box_content').removeClass('loading').html(html);
+	}
+	
+	doAbortJob(id) {
+		// abort job, clicked from active or queued tables
+		Dialog.confirmDanger( 'Abort Job', "Are you sure you want to abort the job &ldquo;<b>" + id + "</b>&rdquo;?", ['alert-decagram', 'Abort'], function(result) {
+			if (!result) return;
+			app.clearError();
+			Dialog.showProgress( 1.0, "Aborting Job..." );
+			
+			app.api.post( 'app/abort_job', { id: id }, function(resp) {
+				Dialog.hideProgress();
+				app.showMessage('success', config.ui.messages.job_aborted);
+			} ); // api.post
+		} ); // confirm
+	}
+	
+	handleJobsChangedView() {
+		// called via debounce when jobs changed on view page
+		if (!this.active || !this.event) return; // sanity
+		
+		this.renderActiveJobs();
+		this.getQueuedJobs();
+		this.fetchJobHistory();
+		
+		// recompute upcoming: shift() entries off if they happened
+		this.autoExpireUpcomingJobs();
+		this.renderUpcomingJobs();
+	}
+	
+	handleStatusUpdateView(data) {
+		// received status update from server, see if major or minor
+		var self = this;
+		var div = this.div;
+		
+		if (data.jobsChanged) {
+			this.handleJobsChangedViewDebounce();
+		}
+		else {
+			// fast update without redrawing entire table
+			var jobs = Object.values(app.activeJobs).filter( function(job) { return job.event == self.event.id } );
+			
+			// FUTURE: ideally sort this, then crop based on offset / limit, so we aren't bashing the DOM for off-page jobs
+			
+			jobs.forEach( function(job) {
+				div.find('#d_ve_jt_state_' + job.id).html( self.getNiceJobState(job) );
+				div.find('#d_ve_jt_server_' + job.id).html( self.getNiceServer(job.server, true) );
+				div.find('#d_ve_jt_elapsed_' + job.id).html( self.getNiceJobElapsedTime(job, false) );
+				div.find('#d_ve_jt_remaining_' + job.id).html( self.getNiceJobRemainingTime(job, false) );
+				
+				// update progress bar without redrawing it (so animation doesn't jitter)
+				self.updateJobProgressBar(job, '#d_ve_jt_progress_' + job.id + ' > div.progress_bar_container');
+			} ); // foreach job
+			
+			// update queued job elapsed times too
+			(this.queuedJobs || []).forEach( function(job) {
+				div.find('#d_ve_jt_elapsed_' + job.id).html( self.getNiceJobElapsedTime(job, true) );
+			} );
+		}
+	}
+	
+	jobActiveNav(offset) {
+		// user clicked on active job pagination nav
+		this.activeOffset = offset;
+		this.div.find('#d_ve_active > .box_content').addClass('loading');
+		this.renderActiveJobs();
+	}
+	
+	applyHistoryFilters() {
+		// menu change for job history filter popdown
+		this.args.filter = this.div.find('#fe_ve_filter').val();
+		this.div.find('#d_ve_history > .box_content').html( '<div class="loading_container"><div class="loading"></div></div>' );
+		this.fetchJobHistory();
+	}
+	
+	fetchJobHistory() {
+		// fetch job history from server
+		var args = this.args;
+		
+		// { query, offset, limit, sort_by, sort_dir }
+		args.query = 'event:' + this.event.id;
+		args.limit = config.alt_items_per_page || 25;
+		
+		// apply filters if any
+		if (args.filter) {
+			switch (args.filter) {
+				case 'z_success': args.query += ' tags:_success'; break;
+				case 'z_error': args.query += ' tags:_error'; break;
+				case 'z_warning': args.query += ' code:warning'; break;
+				case 'z_critical': args.query += ' code:critical'; break;
+				case 'z_abort': args.query += ' code:abort'; break;
+				
+				case 'z_retried': args.query += ' tags:_retried'; break;
+				case 'z_last': args.query += ' tags:_last'; break;
+				case 'z_files': args.query += ' tags:_files'; break;
+				case 'z_test': args.query += ' tags:_test'; break;
+				
+				default:
+					if (args.filter.match(/^t_(.+)$/)) args.query += ' tags:' + RegExp.$1;
+				break;
+			}
+		}
+		
+		app.api.get( 'app/search_jobs', args, this.receiveJobHistory.bind(this) );
+	}
+	
+	receiveJobHistory(resp) {
+		// receive history from db
+		var self = this;
+		var html = '';
+		
+		// make sure page is still active (API may be slow)
+		if (!this.active) return;
+		
+		if (!resp.rows) resp.rows = [];
+		this.jobs = resp.rows;
+		
+		var grid_args = {
+			resp: resp,
+			cols: ['Job ID', 'Server', 'Source', 'Started', 'Elapsed', 'Avg CPU/Mem', 'Result'],
+			data_type: 'job',
+			offset: this.args.offset || 0,
+			limit: this.args.limit,
+			class: 'data_grid job_history_grid',
+			pagination_link: '$P().jobHistoryNav'
+		};
+		
+		html += this.getPaginatedGrid( grid_args, function(job, idx) {
+			return [
+				'<b>' + self.getNiceJob(job, true) + '</b>',
+				self.getNiceServer(job.server, true),
+				self.getNiceJobSource(job),
+				self.getRelativeDateTime( job.started, true ),
+				self.getNiceJobElapsedTime(job, true),
+				self.getNiceJobAvgCPU(job) + ' / ' + self.getNiceJobAvgMem(job),
+				self.getNiceJobResult(job),
+				// '<a href="#Job?id=' + job.id + '">Details</a>'
+			];
+		} );
+		
+		this.div.find('#d_ve_history > .box_content').removeClass('loading').html( html );
+		
+		// populate dynamic summary info values
+		if (resp.rows.length) {
+			var totals = {
+				elapsed: 0,
+				cpu: 0,
+				mem: 0,
+				log_size: 0,
+				passes: 0
+			};
+			resp.rows.forEach( function(job) {
+				totals.elapsed += job.elapsed || 0;
+				
+				var cpu_avg = 0;
+				if (!job.cpu) job.cpu = {};
+				if (job.cpu.total && job.cpu.count) {
+					cpu_avg = Math.round( job.cpu.total / job.cpu.count );
+				}
+				totals.cpu += cpu_avg || 0;
+				
+				var mem_avg = 0;
+				if (!job.mem) job.mem = {};
+				if (job.mem.total && job.mem.count) {
+					mem_avg = Math.round( job.mem.total / job.mem.count );
+				}
+				totals.mem += mem_avg || 0;
+				
+				totals.log_size += job.log_file_size || 0;
+				if (!job.code) totals.passes++;
+			} );
+			
+			var pct_icon = 'circle-outline';
+			var pct_slice = Math.floor( (totals.passes / (resp.rows.length || 1)) * 8 );
+			if (pct_slice) pct_icon = 'circle-slice-' + pct_slice;
+			
+			this.div.find('#d_ve_avg_elapsed').html( '<i class="mdi mdi-clock-outline">&nbsp;</i>' + get_text_from_seconds( Math.round(totals.elapsed / resp.rows.length), true, false ) );
+			this.div.find('#d_ve_avg_cpu').html( '<i class="mdi mdi-chip">&nbsp;</i>' + Math.round(totals.cpu / resp.rows.length) + '%' );
+			this.div.find('#d_ve_avg_mem').html( '<i class="mdi mdi-memory">&nbsp;</i>' + get_text_from_bytes( Math.round(totals.mem / resp.rows.length) ) );
+			this.div.find('#d_ve_log_size').html( '<i class="mdi mdi-floppy">&nbsp;</i>' + get_text_from_bytes( Math.round(totals.log_size / resp.rows.length) ) );
+			this.div.find('#d_ve_success_rate').html( '<i class="mdi mdi-' + pct_icon + '">&nbsp;</i>' + pct(totals.passes, resp.rows.length, true) );
+			
+			if (!this.args.offset) {
+				var job = resp.rows[0];
+				var result = this.getJobResultArgs(job);
+				this.div.find('#d_ve_last_result').html( '<i class="mdi mdi-' + result.ocon + '">&nbsp;</i>' + result.text );
+				this.div.find('#d_ve_last_run').html( this.getRelativeDateTime( job.started ) );
+			}
+		}
+		else {
+			this.div.find('#d_ve_avg_elapsed, #d_ve_avg_cpu, #d_ve_avg_mem, #d_ve_log_size, #d_ve_success_rate, #d_ve_last_result, #d_ve_last_run').html( 'n/a' );
+		}
+		
+		// populate graphs (which follow the current history table pagination)
+		this.populateHistoryCharts();
+	}
+	
+	setupHistoryCharts() {
+		// one time setup for all 5 charts
+		this.charts = {};
+		
+		this.charts.perf = this.createChart({
+			"canvas": '#c_ve_perf',
+			"title": "Performance History",
+			"dataType": "seconds",
+			// "dataSuffix": " sec"
+			"_allow_zoom": true
+		});
+		
+		this.charts.cpu = this.createChart({
+			"canvas": '#c_ve_cpu',
+			"title": "CPU History",
+			"dataType": "integer",
+			"dataSuffix": "%",
+			"_allow_zoom": true
+		});
+		
+		this.charts.mem = this.createChart({
+			"canvas": '#c_ve_mem',
+			"title": "Memory History",
+			"dataType": "bytes",
+			"dataSuffix": "",
+			"_allow_zoom": true
+		});
+		
+		this.charts.disk = this.createChart({
+			"canvas": '#c_ve_disk',
+			"title": "I/O History",
+			"dataType": "bytes",
+			"dataSuffix": "/sec",
+			"_allow_zoom": true
+		});
+		
+		this.charts.net = this.createChart({
+			"canvas": '#c_ve_net',
+			"title": "Network History",
+			"dataType": "bytes",
+			"dataSuffix": "/sec",
+			"_allow_zoom": true
+		});
+		
+		this.setupChartHover('perf');
+		this.setupChartHover('cpu');
+		this.setupChartHover('mem');
+		this.setupChartHover('disk');
+		this.setupChartHover('net');
+	}
+	
+	populateHistoryCharts() {
+		// setup or update charts
+		if (this.jobs.length < 2) {
+			// not enough data, just hide entire div
+			this.div.find('#d_ve_graphs').hide();
+			return;
+		}
+		
+		var perf_keys = {};
+		var perf_data = [];
+		var perf_times = [];
+		
+		var cpu_data = [];
+		var mem_data = [];
+		var disk_data = [];
+		var net_data = [];
+		
+		// build perf data for chart
+		// read backwards as server data is unshifted (descending by date, newest first)
+		for (var idx = this.jobs.length - 1; idx >= 0; idx--) {
+			var job = this.jobs[idx];
+			
+			if (!job.perf) job.perf = { total: job.elapsed };
+			if (!isa_hash(job.perf)) job.perf = parse_query_string( job.perf.replace(/\;/g, '&') );
+			
+			var pscale = 1;
+			if (job.perf.scale) {
+				pscale = job.perf.scale;
+			}
+			
+			var perf = deep_copy_object( job.perf.perf ? job.perf.perf : job.perf );
+			delete perf.scale;
+			
+			// remove counters from perf data
+			for (var key in perf) {
+				if (key.match(/^c_/)) delete perf[key];
+			}
+			
+			if (perf.t) { perf.total = perf.t; delete perf.t; }
+			
+			// divide everything by scale, so we get seconds
+			for (var key in perf) {
+				perf[key] /= pscale;
+			}
+			
+			perf_data.push( perf );
+			for (var key in perf) {
+				perf_keys[key] = 1;
+			}
+			
+			// track times as well
+			perf_times.push( job.completed );
+			
+			// cpu
+			var cpu_avg = 0;
+			if (!job.cpu) job.cpu = {};
+			if (job.cpu.total && job.cpu.count) {
+				cpu_avg = Math.round( job.cpu.total / job.cpu.count );
+			}
+			
+			// mem
+			var mem_avg = 0;
+			if (!job.mem) job.mem = {};
+			if (job.mem.total && job.mem.count) {
+				mem_avg = Math.round( job.mem.total / job.mem.count );
+			}
+			
+			// disk
+			var disk_avg = 0;
+			if (!job.disk) job.disk = {};
+			if (job.disk.total && job.disk.count) {
+				disk_avg = Math.round( job.disk.total / job.disk.count );
+			}
+			
+			// net
+			var net_avg = 0;
+			if (!job.net) job.net = {};
+			if (job.net.total && job.net.count) {
+				net_avg = Math.round( job.net.total / job.net.count );
+			}
+			
+			cpu_data.push({ x: job.completed, y: cpu_avg });
+			mem_data.push({ x: job.completed, y: mem_avg });
+			disk_data.push({ x: job.completed, y: disk_avg });
+			net_data.push({ x: job.completed, y: net_avg });
+			
+		} // foreach row
+		
+		var sorted_perf_keys = hash_keys_to_array(perf_keys).sort();
+		var perf_layers = [];
+		
+		for (var idx = 0, len = sorted_perf_keys.length; idx < len; idx++) {
+			var perf_key = sorted_perf_keys[idx];
+			var layer = {
+				title: perf_key,
+				fill: false,
+				data: []
+			};
+			
+			for (var idy = 0, ley = perf_data.length; idy < ley; idy++) {
+				var perf = perf_data[idy];
+				var value = Math.max( 0, perf[perf_key] || 0 );
+				layer.data.push({ x: perf_times[idy], y: short_float(value) });
+			} // foreach row
+			
+			perf_layers.push( layer );
+		} // foreach key
+		
+		this.charts.perf.layers = [];
+		this.charts.perf.addLayers( perf_layers );
+		
+		this.charts.cpu.layers = [];
+		this.charts.cpu.addLayer({ title: "CPU Usage", data: cpu_data, color: app.colors[0] });
+		
+		this.charts.mem.layers = [];
+		this.charts.mem.addLayer({ title: "Memory Usage", data: mem_data, color: app.colors[1] });
+		
+		this.charts.disk.layers = [];
+		this.charts.disk.addLayer({ title: "I/O Usage", data: disk_data, color: app.colors[2] });
+		
+		this.charts.net.layers = [];
+		this.charts.net.addLayer({ title: "Network Usage", data: net_data, color: app.colors[3] });
+		
+		this.div.find('#d_ve_graphs').show();
+		ChartManager.check();
+	}
+	
+	jobHistoryNav(offset) {
+		// intercept click on job history table pagination nav
+		this.args.offset = offset;
+		this.div.find('#d_ve_history > .box_content').addClass('loading');
+		this.fetchJobHistory();
+	}
+	
+	onAfterRenderUpcomingJobs() {
+		// render additional upcoming job info, if upcoming pagination is on the first page
+		// (this hook is fired by renderUpcomingJobs)
+		if (!this.upcomingOffset) {
+			// show next run in summary header
+			var html = 'n/a';
+			var job = this.upcomingJobs[0];
+			
+			if (job) {
+				if (job.type == 'plugin') {
+					var plugin = find_object( app.plugins, { id: job.plugin } ) || { title: job.plugin };
+					html = `<i class="mdi mdi-${plugin.icon || 'power-plug'}">&nbsp;</i>${plugin.title}`;
+				}
+				else {
+					if (job.seconds) {
+						html = this.getRelativeDateTime( job.epoch + job.seconds[0], true );
+						if (job.seconds.length > 1) html += ' (+' + Math.floor(job.seconds.length - 1) + ')';
+					}
+					else html = this.getRelativeDateTime( job.epoch );
+				}
+			}
+			
+			this.div.find('#d_ve_next_run').html(html);
+		}
+	}
+	
+	onAfterSkipUpcomingJob() {
+		// an uncoming jobs was skipped -- refresh the trigger summary
+		// (this hook is fired by doSkipUpcomingJob)
+		this.div.find('#d_ve_trigger_summary').html( this.getTriggerDetails() );
+	}
+	
+	fetchRevisionHistory() {
+		// fetch revision history from activity db using dedicated api
+		var self = this;
+		if (!this.revisionOffset) this.revisionOffset = 0;
+		
+		var opts = {
+			id: this.event.id,
+			offset: this.revisionOffset,
+			limit: config.alt_items_per_page + 1 // for diff'ing across pages
+		};
+		
+		app.api.get( 'app/get_event_history', opts, this.renderRevisionHistory.bind(this) );
+	}
+	
+	renderRevisionHistory(resp) {
+		// show revision history and add links to detail diff dialogs
+		var self = this;
+		var $cont = this.div.find('#d_ve_revisions');
+		var html = '';
+		
+		if (!this.active) return; // sanity
+		
+		// massage results for diff'ing across pages
+		// revisions always contains a shallow copy (which may have limit+1 items)
+		// resp.rows will be chopped to exactly limit, for display
+		this.revisions = [...resp.rows];
+		if (resp.rows.length > config.alt_items_per_page) resp.rows.pop();
+		
+		var grid_args = {
+			resp: resp,
+			cols: ['Revision', 'Description', 'User', 'Date/Time', 'Actions'],
+			data_type: 'item',
+			offset: this.revisionOffset || 0,
+			limit: config.alt_items_per_page,
+			class: 'data_grid event_revision_grid',
+			pagination_link: '$P().revisionNav'
+		};
+		
+		html += this.getPaginatedGrid( grid_args, function(item, idx) {
+			// figure out icon first
+			if (!item.action) item.action = 'unknown';
+			
+			var item_type = '';
+			for (var key in config.ui.activity_types) {
+				var regexp = new RegExp(key);
+				if (item.action.match(regexp)) {
+					item_type = config.ui.activity_types[key];
+					break;
+				}
+			}
+			item._type = item_type;
+			
+			// compose nice description
+			var desc = item.description;
+			var actions = [];
+			var click = '';
+			var nice_rev = 'n/a';
+			
+			// description template
+			var template = config.ui.activity_descriptions[item.action];
+			if (template) desc = substitute(template, item, false);
+			else if (!desc) desc = '(No description provided)';
+			item._desc = desc;
+			
+			if (item.event) {
+				click = `$P().showActionReport(${idx})`;
+				actions.push(`<button class="link" onClick="${click}"><b>Details...</b></button>`);
+			}
+			
+			if (click) {
+				desc = `<button class="link" onClick="${click}">${desc}</button>`;
+				if (item.event.revision) {
+					nice_rev = `<button class="link" onClick="${click}"><i class="mdi mdi-file-compare">&nbsp;</i><b>${item.event.revision}</b></button>`;
+				}
+			}
+			
+			return [
+				nice_rev,
+				'<i class="mdi mdi-' + item_type.icon + '">&nbsp;</i>' + desc + '',
+				'' + self.getNiceUser(item.username, true) + '',
+				'' + self.getRelativeDateTime( item.epoch ) + '',
+				'' + actions.join(' | ') + ''
+			];
+		}); // getPaginatedGrid
+		
+		$cont.find('> .box_content').html( html );
+	}
+	
+	revisionNav(offset) {
+		// paginate through revision history
+		this.revisionOffset = offset;
+		this.div.find('#d_ve_revisions > .box_content').addClass('loading');
+		this.fetchRevisionHistory();
+	}
+	
+	showActionReport(idx) {
+		// pop dialog for any action
+		var item = this.revisions[idx];
+		var template = config.ui.activity_descriptions[item.action];
+		var is_cur_rev = (item.event.revision === this.event.revision);
+		
+		// massage a title out of description template (ugh)
+		var title = template.replace(/\:\s+.+$/, '').replace(/\s+\(.+$/, '');
+		var btn = '<div class="button secondary" onClick="$P().exportRevision(' + idx + ')"><i class="mdi mdi-cloud-download-outline">&nbsp;</i>Export...</div>' + 
+			'<div class="button danger" onClick="$P().prepRollback(' + idx + ')"><i class="mdi mdi-undo-variant">&nbsp;</i>Rollback...</div>';
+		if (is_cur_rev) btn = '&nbsp;';
+		var md = '';
+		
+		// summary
+		md += "### Summary\n\n";
+		md += '- **Description:** <i class="mdi mdi-' + item._type.icon + '"></i>' + item._desc + "\n";
+		md += '- **Date/Time:** ' + this.getRelativeDateTime(item.epoch).replace(/\&nbsp\;/g, '') + "\n";
+		md += '- **User:** ' + this.getNiceUser(item.username, true) + "\n";
+		md += '- **Revision:** <i class="mdi mdi-file-compare"></i>' + (item.event.revision || 'n/a') + (is_cur_rev ? ' (Current)' : '') + "\n";
+		
+		// diff
+		if (this.revisions[idx + 1] && this.revisions[idx + 1].event) {
+			var old_event = copy_object( this.revisions[idx + 1].event );
+			delete old_event.revision;
+			delete old_event.modified;
+			
+			var new_event = copy_object( item.event );
+			delete new_event.revision;
+			delete new_event.modified;
+			
+			var diff_html = this.getDiffHTML( old_event, new_event ) || '(No changes)';
+			md += "\n### Diff to Previous\n\n";
+			md += '<div class="diff_content">' + diff_html + '</div>' + "\n";
+		}
+		
+		// the thing itself
+		md += "\n### Event JSON\n\n";
+		md += '```json' + "\n";
+		md += JSON.stringify( item.event, null, "\t" ) + "\n";
+		md += '```' + "\n";
+		
+		this.viewMarkdownAuto( title, md, btn );
+	}
+	
+	prepRollback(idx) {
+		// prep rollback to specified revision
+		var item = this.revisions[idx];
+		CodeEditor.hide();
+		Dialog.hide();
+		
+		if (item.event.workflow) {
+			$P('Workflows').rollbackData = item.event;
+			Nav.go('Workflows?sub=edit&id=' + this.event.id + '&rollback=1');
+		}
+		else {
+			this.rollbackData = item.event;
+			Nav.go('Events?sub=edit&id=' + this.event.id + '&rollback=1');
+		}
+	}
+	
+	exportRevision(idx) {
+		// show export dialog for specific history revision
+		var item = this.revisions[idx];
+		CodeEditor.hide();
+		Dialog.hide();
+		
+		this.do_export( item.event, "Export Revision #" + item.event.revision );
+	}
+	
+	go_history() {
+		Nav.go( '#Events?sub=history' );
+	}
+	
+	gosub_history(args) {
+		// show revision history sub-page
+		app.setHeaderNav([
+			{ icon: 'calendar-clock', loc: '#Events?sub=list', title: 'Events' },
+			{ icon: 'history', title: "Revision History" }
+		]);
+		app.setWindowTitle( "Event Revision History" );
+		
+		this.goRevisionHistory({
+			activityType: 'events',
+			itemKey: 'event',
+			editPageID: 'Events',
+			itemMenu: {
+				label: '<i class="icon mdi mdi-calendar-clock">&nbsp;</i>Event:',
+				title: 'Select Event',
+				options: [['', 'Any Event']].concat( this.getCategorizedEvents() ),
+				default_icon: 'file-clock-outline'
+			}
+		});
+	}
+	
+	gosub_new(args) {
+		// create new event
+		var html = '';
+		
+		app.setHeaderNav([
+			{ icon: 'calendar-clock', loc: '#Events?sub=list', title: 'Events' },
+			{ icon: 'file-edit-outline', title: "New Event" }
+		]);
+		
+		// app.setHeaderTitle( '<i class="mdi mdi-calendar-plus">&nbsp;</i>New Event' );
+		app.setWindowTitle( "New Event" );
+		app.highlightTab( 'NewEvent' );
+		
+		html += '<div class="box" style="overflow:hidden">';
+		html += '<div class="box_title">';
+			html += 'New Event';
+			html += '<div class="box_subtitle"><a href="#Events?sub=list">&laquo; Back to Event List</a></div>';
+		html += '</div>';
+		html += '<div class="box_content">';
+		
+		if (this.clone) {
+			this.event = this.clone;
+			delete this.clone;
+			app.showMessage('info', "The event has been cloned as an unsaved draft.", 8);
+		}
+		else {
+			this.event = deep_copy_object( app.config.new_event_template );
+			
+			if (!this.event.category) {
+				if (find_object(app.categories, { id: 'general' })) this.event.category = 'general';
+				else if (!app.categories.length) return this.doFullPageError("You must define at least one category to add events.");
+				else this.event.category = app.categories[0].id;
+			}
+			
+			if (!this.event.plugin) {
+				if (find_object(app.plugins, { id: 'shellplug' })) this.event.plugin = 'shellplug';
+				else if (!app.plugins.length) return this.doFullPageError("You must create at least one Plugin to add events.");
+				else this.event.plugin = app.plugins[0].id;
+			}
+			
+			if (!this.event.targets || !this.event.targets.length) {
+				if (find_object(app.groups, { id: 'main' })) this.event.targets = ['main'];
+				else if (!app.groups.length) return this.doFullPageError(config.ui.errors.new_wf_no_groups);
+				else this.event.targets = [ app.groups[0].id ];
+			}
+		}
+		
+		this.params = this.event.fields; // for user form param editor
+		this.limits = this.event.limits; // for res limit editor
+		this.actions = this.event.actions; // for job action editor
+		
+		this.pluginParamCache = {}; // for saving params when changing plugins
+		
+		// render form
+		html += this.get_event_edit_html();
+		
+		html += '</div>'; // box_content
+		
+		// buttons at bottom
+		html += '<div class="box_buttons">';
+			html += '<div class="button" onClick="$P().cancel_event_new()"><i class="mdi mdi-close-circle-outline">&nbsp;</i>Cancel</div>';
+			html += '<div class="button secondary" onClick="$P().do_export_current()"><i class="mdi mdi-cloud-download-outline">&nbsp;</i><span>Export...</span></div>';
+			html += '<div class="button primary" id="btn_save" onClick="$P().do_new_event()"><i class="mdi mdi-floppy">&nbsp;</i>Create Event</div>';
+		html += '</div>'; // box_buttons
+		
+		html += '</div>'; // box
+		
+		this.div.html( html ).buttonize();
+		
+		MultiSelect.init( this.div.find('select[multiple]') );
+		SingleSelect.init( this.div.find('#fe_ee_icon, #fe_ee_cat, #fe_ee_algo, #fe_ee_plugin') );
+		this.renderPluginParamEditor();
+		this.renderParamEditor();
+		// this.updateAddRemoveMe('#fe_ee_email');
+		$('#fe_ee_title').focus();
+		this.setupBoxButtonFloater();
+	}
+	
+	cancel_event_new() {
+		// cancel editing event and return to list
+		if (this.event.id) Nav.go( '#Events?sub=view&id=' + this.event.id );
+		else Nav.go( '#Events?sub=list' );
+	}
+	
+	do_new_event(force) {
+		// create new event
+		app.clearError();
+		var event = this.get_event_form_json();
+		if (!event) return; // error
+		
+		this.event = event;
+		
+		Dialog.showProgress( 1.0, "Creating Event..." );
+		app.api.post( 'app/create_event', event, this.new_event_finish.bind(this) );
+	}
+	
+	new_event_finish(resp) {
+		// new event created successfully
+		Dialog.hideProgress();
+		if (!this.active) return; // sanity
+		
+		// create in-memory copy, but prevent race condition as server blasts update at same time
+		var idx = find_object_idx(app.events, { id: resp.event.id });
+		if (idx == -1) app.events.push(resp.event);
+		
+		Nav.go( 'Events?sub=view&id=' + resp.event.id );
+		app.showMessage('success', "The new event was created successfully.");
+	}
+	
+	gosub_edit(args) {
+		// edit event subpage
+		// this.loading();
+		
+		// app.api.post( 'app/get_event', { id: args.id }, this.receive_event.bind(this), this.fullPageError.bind(this) );
+		var event = find_object( app.events, { id: args.id } );
+		if (!event) return this.doFullPageError("Event not found: " + args.id);
+		
+		if (args.rollback && this.rollbackData) {
+			event = this.rollbackData;
+			delete this.rollbackData;
+			app.showMessage('info', `Revision ${event.revision} has been loaded as a draft edit.  Click 'Save Changes' to complete the rollback.  Note that a new revision number will be assigned.`);
+		}
+		
+		this.receive_event({ code: 0, event: deep_copy_object(event) });
+	}
+	
+	receive_event(resp) {
+		// edit existing event
+		var html = '';
+		
+		this.event = resp.event;
+		
+		if (!this.event.fields) this.event.fields = [];
+		this.params = this.event.fields; // for user form param editor
+		this.limits = this.event.limits; // for res limit editor
+		this.actions = this.event.actions; // for job action editor
+		
+		this.pluginParamCache = {}; // for saving params when changing plugins
+		
+		app.setHeaderNav([
+			{ icon: 'calendar-clock', loc: '#Events?sub=list', title: 'Events' },
+			{ icon: this.event.icon || 'file-clock-outline', loc: '#Events?sub=view&id=' + this.event.id, title: this.event.title },
+			{ icon: 'file-edit-outline', title: "Edit Event" }
+		]);
+		
+		// app.setHeaderTitle( '<i class="mdi mdi-calendar-edit">&nbsp;</i>Event Editor' );
+		app.setWindowTitle( "Editing Event \"" + (this.event.title) + "\"" );
+		
+		html += '<div class="box">';
+		html += '<div class="box_title">';
+			html += 'Edit Event Details';
+			html += '<div class="box_subtitle"><a href="#Events?sub=view&id=' + this.event.id + '">&laquo; Back to Event</a></div>';
+		html += '</div>';
+		html += '<div class="box_content">';
+		
+		html += this.get_event_edit_html();
+		
+		html += '</div>'; // box_content
+		
+		// buttons at bottom
+		html += '<div class="box_buttons">';
+			html += '<div class="button cancel mobile_collapse" onClick="$P().cancel_event_edit()"><i class="mdi mdi-close-circle-outline">&nbsp;</i><span>Close</span></div>';
+			html += '<div class="button danger mobile_collapse" onClick="$P().show_delete_event_dialog()"><i class="mdi mdi-trash-can-outline">&nbsp;</i><span>Delete...</span></div>';
+			html += '<div class="button secondary mobile_collapse" onClick="$P().do_clone()"><i class="mdi mdi-content-copy">&nbsp;</i><span>Clone...</span></div>';
+			html += '<div class="button secondary mobile_collapse" onClick="$P().do_test_event()"><i class="mdi mdi-test-tube">&nbsp;</i><span>Test...</span></div>';
+			html += '<div class="button secondary mobile_collapse mobile_hide" onClick="$P().do_export_current()"><i class="mdi mdi-cloud-download-outline">&nbsp;</i><span>Export...</span></div>';
+			html += '<div class="button secondary mobile_collapse mobile_hide" onClick="$P().go_edit_history()"><i class="mdi mdi-history">&nbsp;</i><span>History...</span></div>';
+			html += '<div class="button save phone_collapse" id="btn_save" onClick="$P().do_save_event()"><i class="mdi mdi-floppy">&nbsp;</i><span>Save Changes</span></div>';
+		html += '</div>'; // box_buttons
+		
+		html += '</div>'; // box
+		
+		this.div.html( html ).buttonize();
+		
+		MultiSelect.init( this.div.find('select[multiple]') );
+		SingleSelect.init( this.div.find('#fe_ee_icon, #fe_ee_cat, #fe_ee_algo, #fe_ee_plugin') );
+		this.renderPluginParamEditor();
+		this.renderParamEditor();
+		// this.updateAddRemoveMe('#fe_ee_email');
+		this.setupBoxButtonFloater();
+		this.setupEditTriggers();
+	}
+	
+	cancel_event_edit() {
+		// cancel editing event and return to list
+		if (this.event.id) Nav.go( '#Events?sub=view&id=' + this.event.id );
+		else Nav.go( '#Events?sub=list' );
+	}
+	
+	do_clone() {
+		// make copy of event and jump over to new
+		app.clearError();
+		var event = this.get_event_form_json();
+		if (!event) return; // error
+		
+		var clone = deep_copy_object(event);
+		clone.title = "Copy of " + clone.title;
+		delete clone.id;
+		delete clone.created;
+		delete clone.modified;
+		delete clone.revision;
+		delete clone.username;
+		
+		this.clone = clone;
+		Nav.go('Events?sub=new');
+	}
+	
+	do_export_current() {
+		// show multi-export dialog for current event
+		// called from new or edit
+		app.clearError();
+		var event = this.get_event_form_json();
+		if (!event) return; // error
+		
+		this.do_export(event);
+	}
+	
+	do_export(event, custom_title) {
+		// show multi-export dialog
+		var self = this;
+		
+		var getExportedItems = function(event) {
+			// compute exported data and all selected deps
+			var dep_list = $('#fe_ee_deps').val() || [];
+			var deps = array_to_hash_keys( dep_list, 1 );
+			var items = [ { type: 'event', data: event } ];
+			
+			var addAction = function(action) {
+				// add action deps
+				switch (action.type) {
+					case 'plugin':
+						if (deps.plugins) {
+							var plugin = find_object( app.plugins, { id: action.plugin_id } );
+							if (plugin) items.push({ type: 'plugin', data: plugin });
+						}
+					break;
+					
+					case 'web_hook':
+						if (deps.web_hooks) {
+							var web_hook = find_object( app.web_hooks, { id: action.web_hook } );
+							if (web_hook && (web_hook.id != 'example_hook')) items.push({ type: 'web_hook', data: web_hook });
+						}
+					break;
+					
+					case 'store':
+					case 'fetch':
+						if (deps.buckets) {
+							var bucket = find_object( app.buckets, { id: action.bucket_id } );
+							if (bucket) items.push({ type: 'bucket', data: bucket });
+						}
+					break;
+					
+					case 'tag':
+						if (deps.tags) {
+							var tag = find_object( app.tags, { id: action.tag_id } );
+							if (tag) items.push({ type: 'tag', data: tag });
+						}
+					break;
+				} // switch action.type
+			};
+			
+			if (event.workflow) {
+				var workflow = event.workflow;
+				
+				// events
+				if (deps.events) {
+					find_objects(workflow.nodes || [], { type: 'event' }).forEach( function(node) {
+						// recurse to add sub-event
+						var sub_event = find_object( app.events, { id: node.data.event } );
+						if (sub_event) items = items.concat( getExportedItems(sub_event) );
+					} );
+				}
+				
+				// ad-hoc jobs
+				if (deps.plugins) {
+					find_objects(workflow.nodes || [], { type: 'job' }).forEach( function(node) {
+						var plugin = find_object( app.plugins, { id: node.data.plugin } );
+						if (plugin && !plugin.stock) items.push({ type: 'plugin', data: plugin });
+					} );
+				}
+				
+				// actions
+				find_objects(workflow.nodes || [], { type: 'action' }).forEach( function(node) {
+					var action = node.data;
+					addAction(action);
+				} );
+			}
+			else {
+				// plugin (skip stock ones)
+				if (deps.plugins) {
+					var plugin = find_object( app.plugins, { id: event.plugin } );
+					if (plugin && !plugin.stock) items.push({ type: 'plugin', data: plugin });
+				}
+			}
+			
+			// category
+			if (deps.categories) {
+				var category = find_object( app.categories, { id: event.category } );
+				if (category && (category.id != 'general')) items.push({ type: 'category', data: category });
+			}
+			
+			// groups
+			if (deps.groups) {
+				(event.targets || []).forEach( function(target) {
+					var group = find_object( app.groups, { id: target } );
+					if (group) items.push({ type: 'group', data: group });
+				} );
+			}
+			
+			// tags
+			if (deps.tags) {
+				(event.tags || []).forEach( function(tag_id) {
+					var tag = find_object( app.tags, { id: tag_id } );
+					if (tag) items.push({ type: 'tag', data: tag });
+				} );
+			}
+			
+			// triggers (plugins)
+			if (deps.plugins) {
+				(event.triggers || []).forEach( function(trigger) {
+					if (trigger.type != 'plugin') return;
+					var plugin = find_object( app.plugins, { id: trigger.plugin_id } );
+					if (plugin) items.push({ type: 'plugin', data: plugin });
+				} );
+			}
+			
+			// actions (plugins, web hooks, buckets)
+			(event.actions || []).forEach( function(action) {
+				addAction(action);
+			} );
+			
+			// dedupe
+			var final_items = [];
+			var item_ids = {};
+			items.forEach( function(item) {
+				var id = item.type + '|' + item.data.id;
+				if (item_ids[id]) return;
+				item_ids[id] = 1;
+				
+				// make copy so we can prune unnecessary props
+				var final_item = deep_copy_object(item);
+				delete final_item.data.created;
+				delete final_item.data.modified;
+				delete final_item.data.revision;
+				delete final_item.data.sort_order;
+				delete final_item.data.username;
+				
+				final_items.push(final_item);
+			} );
+			
+			return final_items;
+		}; // getExportedItems
+		
+		var getExportedPayload = function() {
+			var json = {
+				type: 'xypdf',
+				description: "xyOps Portable Data Object",
+				version: "1.0",
+				xyops: app.version,
+				items: getExportedItems(event)
+			};
+			var payload = JSON.stringify(json, null, "\t") + "\n";
+			return payload;
+		};
+		
+		var title = custom_title || (this.workflow ? "Export Workflow" : "Export Event");
+		var btn = ['cloud-download-outline', 'Download File'];
+		
+		var html = '<div class="dialog_box_content scroll maximize">';
+		
+		// deps: events, plugins, web hooks, cateogries, groups, buckets, tags
+		html += this.getFormRow({
+			label: 'Dependencies:',
+			content: this.getFormMenuMulti({
+				id: 'fe_ee_deps',
+				title: 'Include dependencies',
+				placeholder: '(None)',
+				options: [
+					find_object( config.ui.list_list, { id: 'buckets' } ),
+					find_object( config.ui.list_list, { id: 'categories' } ),
+					find_object( config.ui.list_list, { id: 'events' } ),
+					find_object( config.ui.list_list, { id: 'groups' } ),
+					find_object( config.ui.list_list, { id: 'plugins' } ),
+					find_object( config.ui.list_list, { id: 'tags' } ),
+					find_object( config.ui.list_list, { id: 'web_hooks' } )
+				],
+				values: [],
+				'data-hold': 1,
+				'data-select-all': 1
+			}),
+			caption: 'Optionally include dependencies with your export.'
+		});
+		
+		// json
+		html += this.getFormRow({
+			label: 'View Export:',
+			content: `<div class="button small secondary" id="btn_ee_view_json"><i class="mdi mdi-code-json">&nbsp;</i>View JSON Data...</div>`,
+			caption: 'Click to view the raw JSON data for your export, and optionally copy it to your clipboard.'
+		});
+		
+		html += '</div>';
+		Dialog.confirm( title, html, btn, function(result) {
+			if (!result) return;
+			app.clearError();
+			
+			var payload = getExportedPayload();
+			var filename = 'xyops-' + (event.type || 'event') + '-' + event.id + '.json';
+			var blob = new Blob([payload], { type: "application/json" });
+			var url = URL.createObjectURL(blob);
+			
+			// create temp link element
+			var a = document.createElement("a");
+			a.href = url;
+			a.download = filename;
+			
+			// click it, the remove it
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			
+			// cleanup
+			URL.revokeObjectURL(url);
+			Dialog.hide();
+		}); // Dialog.confirm
+		
+		MultiSelect.init( $('#fe_ee_deps') );
+		Dialog.autoResize();
+		
+		$('#btn_ee_view_json').on('click', function() {
+			self.viewCodeAuto('Export JSON Data', getExportedPayload());
+		});
+	}
+	
+	go_edit_history() {
+		Nav.go( '#Events?sub=history&id=' + this.event.id );
+	}
+	
+	do_test_event() {
+		// test event with temporary changes
+		// Note: This may include unsaved changes, which are included in the on-demand run now job, by design
+		var self = this;
+		var title = this.workflow ? "Test Workflow" : "Test Event";
+		var btn = ['open-in-new', 'Run Now'];
+		
+		app.clearError();
+		var event = this.get_event_form_json();
+		if (!event) return; // error
+		
+		var html = '<div class="dialog_box_content scroll maximize">';
+		
+		// actions
+		html += this.getFormRow({
+			label: 'Actions:',
+			content: this.getFormCheckbox({
+				id: 'fe_ete_actions',
+				label: 'Enable All Actions',
+				checked: true
+			}),
+			caption: 'Enable all event actions for the test run.'
+		});
+		
+		// limits
+		html += this.getFormRow({
+			label: 'Limits:',
+			content: this.getFormCheckbox({
+				id: 'fe_ete_limits',
+				label: 'Enable All Limits',
+				checked: true
+			}),
+			caption: 'Enable all resource limits for the test run.'
+		});
+		
+		// custom input json
+		html += this.getFormRow({
+			label: 'Data Input:',
+			content: this.getFormTextarea({
+				id: 'fe_ete_input',
+				rows: 1,
+				value: JSON.stringify({ data: {}, files: [] }, null, "\t"),
+				style: 'display:none'
+			}) + `<div class="button small secondary" onClick="$P().openJobDataImporter()"><i class="mdi mdi-database-search-outline">&nbsp;</i>${config.ui.buttons.wfd_data_importer}</div>` + 
+				`<div class="button small secondary" style="margin-left:15px;" onClick="$P().edit_test_input()"><i class="mdi mdi-text-box-edit-outline">&nbsp;</i>${config.ui.buttons.wfd_edit_json}</div>`,
+			caption: 'Optionally customize the JSON input data for the job.  This is used to simulate data being passed to it from a previous job.'
+		});
+		
+		// user files
+		var limit = find_object( event.limits || [], { type: 'file', enabled: true } );
+		html += this.getFormRow({
+			label: 'File Input:',
+			content: this.getDialogFileUploader(limit),
+			caption: 'Optionally upload and attach files to the job as inputs.'
+		});
+		
+		// user form fields
+		html += this.getFormRow({
+			label: 'User Parameters:',
+			content: '<div class="plugin_param_editor_cont">' + this.getParamEditor(event.fields, {}) + '</div>',
+			caption: (event.fields && event.fields.length) ? 'Enter values for all the event-defined parameters here.' : ''
+		});
+		
+		html += '</div>';
+		Dialog.confirm( title, html, btn, function(result) {
+			if (!result) return;
+			app.clearError();
+			
+			var job = deep_copy_object(event);
+			job.enabled = true; // override event disabled, so test actually runs
+			job.test = true;
+			job.test_actions = true;
+			job.test_limits = true;
+			job.label = "Test";
+			job.icon = "test-tube";
+			
+			if (!$('#fe_ete_actions').is(':checked')) {
+				job.actions = [];
+				job.test_actions = false;
+			}
+			if (!$('#fe_ete_limits').is(':checked')) {
+				job.limits = [];
+				job.test_limits = false;
+			}
+			
+			// parse custom input json
+			var raw_json = $('#fe_ete_input').val();
+			if (raw_json) try {
+				job.input = JSON.parse( raw_json );
+			}
+			catch (err) {
+				return app.badField( '#fe_ete_input', "", { err } );
+			}
+			
+			// add files if user uploaded
+			if (self.dialogFiles && self.dialogFiles.length) {
+				if (!job.input) job.input = {};
+				if (!job.input.files) job.input.files = [];
+				job.input.files = job.input.files.concat( self.dialogFiles );
+				delete self.dialogFiles;
+			}
+			
+			var params = self.getParamValues(self.event.fields);
+			if (!params) return; // validation error
+			
+			if (!job.params) job.params = {};
+			merge_hash_into( job.params, params );
+			
+			// pre-open new window/tab for job details
+			var win = window.open('', '_blank');
+			
+			app.api.post( 'app/run_event', job, function(resp) {
+				// Dialog.hideProgress();
+				if (!self.active) return; // sanity
+				
+				// jump immediately to live details page in new window
+				// Nav.go('Job?id=' + resp.id);
+				win.location.href = '#Job?id=' + resp.id;
+			}, 
+			function(err) {
+				// capture error so we can close the window we just opened
+				win.close();
+				app.doError("API Error: " + err.description);
+			});
+			
+			Dialog.hide();
+		}); // Dialog.confirm
+		
+		Dialog.onDragDrop = function(files) {
+			// files dropped on dialog
+			ZeroUpload.upload( files, {}, app.csrf_token ? { csrf_token: app.csrf_token } : {} );
+		};
+		
+		Dialog.onHide = function() {
+			// cleanup
+			// FUTURE: If self.dialogFiles still exists here, delete in background (user canceled job)
+			delete self.dialogFiles;
+		};
+		
+		Dialog.autoResize();
+	}
+	
+	edit_test_input() {
+		// popup json editor for test dialog
+		this.editCodeAuto({
+			title: "Edit Raw Input Data", 
+			code: $('#fe_ete_input').val(), 
+			format: 'json',
+			callback: function(new_value) {
+				$('#fe_ete_input').val( new_value );
+			}
+		});
+	}
+	
+	openJobDataImporter() {
+		// open job data importer dialog
+		var self = this;
+		var $input = $('#fe_ete_input');
+		var title = config.ui.titles.wfd_data_importer;
+		var html = '';
+		var temp_data = null;
+		
+		html += `<div class="dialog_intro">${config.ui.intros.wfd_data_importer}</div>`;
+		html += '<div class="dialog_box_content scroll maximize">';
+		
+		// job picker
+		html += this.getFormRow({
+			id: 'd_ex_job',
+			content: this.getFormMenuSingle({
+				id: 'fe_ex_job',
+				options: [ { id: '', title: config.ui.menu_bits.generic_loading } ],
+				value: ''
+			})
+		});
+		
+		// json tree viewer
+		html += this.getFormRow({
+			id: 'd_ex_code_viewer',
+			content: '<div id="d_ex_tree"><div class="ex_tree_inner"><div class="loading_container"><div class="loading"></div></div></div></div>'
+		});
+		
+		html += '</div>'; // dialog_box_content
+		
+		var buttons_html = "";
+		buttons_html += `<div class="button" onClick="CodeEditor.hide()"><i class="mdi mdi-close-circle-outline">&nbsp;</i>${config.ui.buttons.cancel}</div>`;
+		buttons_html += `<div id="btn_ex_apply" class="button primary"><i class="mdi mdi-check-circle">&nbsp;</i>${config.ui.buttons.import_confirm}</div>`;
+		
+		CodeEditor.showSimpleDialog(title, html, buttons_html);
+		
+		SingleSelect.init('#fe_ex_job');
+		
+		$('#fe_ex_job').on('change', function() {
+			var id = $(this).val();
+			if (!id) return; // sanity
+			
+			// now load job details
+			app.api.get( 'app/get_job', { id, remove: ['timelines', 'activity'] }, function(resp) {
+				// see if job actually produced data and/or files
+				var job = resp.job;
+				
+				if ((job.data && first_key(job.data)) || (job.files && job.files.length)) {
+					temp_data = { data: job.data || {}, files: job.files || [] };
+					
+					$('#d_ex_tree > .ex_tree_inner').html( 
+						'<pre><code class="hljs">' + app.highlightAuto(JSON.stringify(temp_data, null, "\t"), 'json') + '</code></pre>' 
+					);
+				}
+				else {
+					$('#d_ex_tree > .ex_tree_inner').html(`<div class="ex_tree_none">${config.ui.errors.ex_tree_no_data}</div>`);
+					temp_data = null;
+				}
+			} ); // api.get
+		}); // on change
+		
+		$('#btn_ex_apply').on('click', function() {
+			// apply changes and exit dialog
+			if (temp_data) {
+				$input.val( JSON.stringify(temp_data, null, "\t") );
+			}
+			CodeEditor.hide();
+		});
+		
+		// job search
+		var squery = (this.workflow ? 'source:workflow' : 'event:' + this.event.id) + ' tags:_success';
+		
+		app.api.get( 'app/search_jobs', { query: squery, limit: config.alt_items_per_page }, function(resp) {
+			var items = (resp.rows || []).map( function(job) {
+				var args = self.getJobDisplayArgs(job);
+				return { id: job.id, title: args.title, icon: args.icon };
+			} );
+			
+			if (!items.length) {
+				$('#fe_ex_job').html( render_menu_options( [{ id: '', title: config.ui.errors.fe_ex_job }], '' ) ).trigger('change');
+				$('#d_ex_tree > .ex_tree_inner').html(`<div class="ex_tree_none">${config.ui.errors.ex_tree_none}</div>`);
+				return;
+			}
+			
+			// change menu items and fire onChange event for redraw
+			$('#fe_ex_job').html( render_menu_options( items, items[0].id ) ).trigger('change');
+		} ); // api.get
+	}
+	
+	do_save_event() {
+		// save changes to event
+		app.clearError();
+		var event = this.get_event_form_json();
+		if (!event) return; // error
+		
+		this.event = event;
+		this.saving = true;
+		
+		Dialog.showProgress( 1.0, "Saving Event..." );
+		app.api.post( 'app/update_event', event, this.save_event_finish.bind(this), this.save_event_error.bind(this) );
+	}
+	
+	save_event_finish(resp) {
+		// event saved successfully
+		app.cacheBust = hires_time_now();
+		Dialog.hideProgress();
+		if (!this.active) return; // sanity
+		
+		// update in-memory copy and remove saving flag
+		this.event = resp.event;
+		
+		if (!this.event.fields) this.event.fields = [];
+		this.params = this.event.fields; // for user form param editor
+		this.limits = this.event.limits; // for res limit editor
+		this.actions = this.event.actions; // for job action editor
+		
+		delete this.saving;
+		
+		this.triggerSaveComplete();
+		app.showMessage('success', "The event was saved successfully.");
+	}
+	
+	save_event_error(resp) {
+		// error saving event!
+		app.doError( resp.description );
+		delete this.saving;
+	}
+	
+	show_delete_event_dialog() {
+		// show dialog confirming event delete action
+		var self = this;
+		var thing = this.workflow ? "workflow" : "event";
+		var event = this.event;
+		
+		// check for jobs first
+		var event_jobs = find_objects( app.activeJobs, { event: this.event.id } );
+		if (event_jobs.length) return app.doError("Sorry, you cannot delete a event that has active jobs running.");
+		
+		Dialog.confirmDanger( 'Delete ' + ucfirst(thing), "Are you sure you want to <b>permanently delete</b> the " + thing + " &ldquo;<b>" + event.title + "</b>&rdquo;?  This will also delete all job history for the event.  There is no way to undo this action.", ['trash-can', 'Delete'], function(result) {
+			if (!result) return;
+			
+			Dialog.showProgress( 1.0, self.workflow ? "Deleting Workflow..." : "Deleting Event..." );
+			
+			self.saving = true;
+			app.api.post( 'app/delete_event', { id: event.id, delete_jobs: true }, function(resp) {
+				delete self.saving;
+				Dialog.hideProgress();
+				if (!self.active) return; // sanity
+				
+				app.showMessage('success', "The " + thing + " &ldquo;" + event.title + "&rdquo; was deleted successfully.  The job history is being deleted in the background.");
+				Nav.go('Events?sub=list', 'force');
+				
+			}, self.save_event_error.bind(self) ); // api.post
+		} );
+	}
+	
+	get_event_edit_html() {
+		// get html for editing an event (or creating a new one)
+		var html = '';
+		var event = this.event;
+		
+		if (event.id) {
+			// event id
+			html += this.getFormRow({
+				label: 'Event ID:',
+				content: this.getFormText({
+					id: 'fe_ee_id',
+					class: 'monospace',
+					spellcheck: 'false',
+					disabled: 'disabled',
+					value: event.id
+				}),
+				suffix: this.getFormIDCopier(),
+				caption: 'This is a unique ID for the event, used by the xyOps API.  It cannot be changed.'
+			});
+		}
+		
+		// title
+		html += this.getFormRow({
+			label: 'Event Title:',
+			content: this.getFormText({
+				id: 'fe_ee_title',
+				spellcheck: 'false',
+				value: event.title
+			}),
+			caption: 'Enter the title of the event, for display purposes.'
+		});
+		
+		// enabled
+		html += this.getFormRow({
+			label: 'Status:',
+			content: this.getFormCheckbox({
+				id: 'fe_ee_enabled',
+				label: 'Event Enabled',
+				checked: event.enabled
+			}),
+			caption: 'Only enabled events can run jobs, including scheduled and immediate runs.'
+		});
+		
+		// icon
+		html += this.getFormRow({
+			label: 'Custom Icon:',
+			content: this.getFormMenuSingle({
+				id: 'fe_ee_icon',
+				title: 'Select icon for event',
+				placeholder: 'Select icon for event...',
+				options: [['', '(None)']].concat( iconFontNames.map( function(name) { return { id: name, title: name, icon: name }; } ) ),
+				value: event.icon || '',
+				// 'data-shrinkwrap': 1
+			}),
+			caption: 'Optionally choose an icon for the event.'
+		});
+		
+		// category
+		html += this.getFormRow({
+			label: 'Category:',
+			content: this.getFormMenuSingle({
+				id: 'fe_ee_cat',
+				title: 'Select category for event',
+				placeholder: 'Select category for event...',
+				options: app.categories,
+				value: event.category || '',
+				default_icon: 'folder-open-outline',
+				// 'data-shrinkwrap': 1
+			}),
+			suffix: '<div class="form_suffix_icon mdi mdi-folder-plus-outline" title="Quick Add Category..." onClick="$P().quickAddCategory()" onMouseDown="event.preventDefault();"></div>',
+			caption: 'Select a category for the event (this may limit the max concurrent jobs, etc.)'
+		});
+		
+		// tags
+		html += this.getFormRow({
+			label: 'Tags:',
+			content: this.getFormMenuMulti({
+				id: 'fe_ee_tags',
+				title: 'Select tags for event',
+				placeholder: 'Select tags for event...',
+				options: app.tags,
+				values: event.tags,
+				default_icon: 'tag-outline',
+				// 'data-shrinkwrap': 1
+			}),
+			suffix: '<div class="form_suffix_icon mdi mdi-tag-plus-outline" title="Quick Add Tag..." onClick="$P().quickAddTag()" onMouseDown="event.preventDefault();"></div>',
+			caption: 'Optionally select one or more tags for the event.  Each job can add its own tags at run time.'
+		});
+		
+		// target(s)
+		var target_items = [].concat(
+			this.buildOptGroup(app.groups, "Groups:", 'server-network'),
+			this.buildServerOptGroup("Servers:", 'router-network')
+		);
+		
+		html += this.getFormRow({
+			label: 'Targets:',
+			content: this.getFormMenuMulti({
+				id: 'fe_ee_targets',
+				title: 'Select targets for event',
+				placeholder: 'Select targets for event...',
+				options: target_items,
+				values: event.targets,
+				auto_add: true,
+				// 'data-hold': 1
+				// 'data-shrinkwrap': 1
+			}),
+			caption: 'Select groups and/or servers to run the event.'
+		});
+		
+		// target expression
+		html += this.getFormRow({
+			label: 'Expression:',
+			content: this.getFormText({
+				id: 'fe_ee_expression',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				class: 'monospace',
+				value: event.expression || ''
+			}),
+			caption: 'Optionally enter an expression to further target servers based on their data, e.g. `userData.foo == "bar"`.  [Learn More](#Docs/events/target-expressions).'			
+		});
+		
+		// algo
+		var algo_items = config.ui.event_target_algo_menu.concat(
+			this.buildOptGroup( app.monitors, "Least Monitor Value:", 'chart-line', 'monitor:' )
+		);
+		
+		html += this.getFormRow({
+			label: 'Algorithm:',
+			content: this.getFormMenuSingle({
+				id: 'fe_ee_algo',
+				title: 'Select algorithm for targets',
+				placeholder: 'Select algorithm for targets...',
+				options: algo_items,
+				value: event.algo || '',
+				default_icon: 'arrow-decision',
+				// 'data-shrinkwrap': 1
+			}),
+			caption: 'Select the desired algorithm for choosing a server from the target list.'
+		});
+		
+		// plugin
+		html += this.getFormRow({
+			label: 'Plugin:',
+			content: this.getFormMenuSingle({
+				id: 'fe_ee_plugin',
+				title: 'Select Plugin for event',
+				placeholder: 'Select Plugin for event...',
+				options: app.plugins.filter( function(plugin) { return plugin.type == 'event'; } ),
+				value: event.plugin || '',
+				default_icon: 'power-plug-outline',
+				// 'data-shrinkwrap': 1
+				onChange: '$P().changePlugin()'
+			}),
+			caption: 'Select the desired Plugin to run jobs for the event.  Plugin parameters will appear below.'
+		});
+		
+		// plugin params
+		html += this.getFormRow({
+			label: 'Parameters:',
+			content: '<div id="d_ee_params" class="plugin_param_editor_cont"></div>',
+			caption: 'Enter values for all the Plugin-defined parameters here.'
+		});
+		
+		// user fields
+		html += this.getFormRow({
+			label: 'User Fields:',
+			content: '<div id="d_params_table"></div>',
+			caption: 'Optionally define a custom set of extra parameters to be collected when a user runs your event manually.'
+		});
+		
+		// triggers
+		html += this.getFormRow({
+			label: 'Triggers:',
+			content: '<div id="d_ee_trigger_table">' + this.getTriggerTable() + '</div>',
+			caption: 'Select how and when your event should run, including manual executions and scheduling options.'
+		});
+		
+		// resource limits
+		// (requires this.limits to be populated)
+		html += this.getFormRow({
+			label: 'Resource Limits:',
+			content: '<div id="d_ee_reslim_table">' + this.getResLimitTable() + '</div>',
+			caption: 'Optionally select resource limits to assign to jobs.  These will override limits set at the category level.'
+		});
+		
+		// actions
+		// (requires this.actions to be populated)
+		html += this.getFormRow({
+			label: 'Job Actions:',
+			content: '<div id="d_ee_jobact_table">' + this.getJobActionTable() + '</div>',
+			caption: 'Optionally select custom actions to perform for each job.  Actions may also be added at the category level.'
+		});
+		
+		// notes
+		html += this.getFormRow({
+			label: 'Notes:',
+			content: this.getFormTextarea({
+				id: 'fe_ee_notes',
+				rows: 5,
+				value: event.notes
+			}),
+			caption: 'Optionally enter notes for the event, which will be included in all email notifications.'
+		});
+		
+		return html;
+	}
+	
+	quickAddCategory() {
+		// show dialog to quickly add a new category, then redraw cat menu, and preselect the newly added
+		var self = this;
+		var title = "Quick Add Category";
+		var btn = ['folder-plus', "Add Category"];
+		
+		var html = '<div class="dialog_box_content">';
+		
+		html += this.getFormRow({
+			label: 'Category Name:',
+			content: this.getFormText({
+				id: 'fe_ecd_title',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				value: ''
+			}),
+			caption: 'Enter the name of the new category.'
+		});
+		
+		html += '</div>';
+		Dialog.confirm( title, html, btn, function(result) {
+			if (!result) return;
+			
+			var title = $('#fe_ecd_title').val().trim();
+			if (!title.length) return app.badField('#fe_ecd_title', "Please enter a name for the new category.");
+			
+			var category = { title, enabled: true };
+			
+			app.api.post( 'app/create_category', category, function(resp) {
+				app.cacheBust = hires_time_now();
+				app.showMessage('success', "The new category was created successfully.");
+				
+				if (!self.active) return; // sanity
+				
+				// append to the menu
+				var id = resp.category.id;
+				$('#fe_ee_cat').append( '<option value="' + id + '" data-icon="folder-open-outline">' + title + '</option>' ).val(id).trigger('change');
+			} ); // api.post
+			
+			Dialog.hide();
+		}); // Dialog.confirm
+		
+		$('#fe_ecd_title').focus();
+	}
+	
+	quickAddTag() {
+		// show dialog to quickly add a new tag, then redraw cat menu, and preselect the newly added
+		var self = this;
+		var title = "Quick Add Tag";
+		var btn = ['tag-plus', "Add Tag"];
+		
+		var html = '<div class="dialog_box_content">';
+		
+		html += this.getFormRow({
+			label: 'Tag Name:',
+			content: this.getFormText({
+				id: 'fe_etd_title',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				value: ''
+			}),
+			caption: 'Enter the name of the new tag.'
+		});
+		
+		html += '</div>';
+		Dialog.confirm( title, html, btn, function(result) {
+			if (!result) return;
+			
+			var title = $('#fe_etd_title').val().trim();
+			if (!title.length) return app.badField('#fe_ecd_title', "Please enter a name for the new tag.");
+			
+			var tag = { title, enabled: true };
+			
+			app.api.post( 'app/create_tag', tag, function(resp) {
+				app.cacheBust = hires_time_now();
+				app.showMessage('success', "The new tag was created successfully.");
+				
+				if (!self.active) return; // sanity
+				
+				// append to the menu
+				var id = resp.tag.id;
+				$('#fe_ee_tags').append( '<option value="' + id + '" data-icon="tag-outline" selected="selected">' + title + '</option>' ).trigger('change');
+			} ); // api.post
+			
+			Dialog.hide();
+		}); // Dialog.confirm
+		
+		$('#fe_etd_title').focus();
+	}
+	
+	renderTriggerTable() {
+		// render res limit editor
+		var html = this.getTriggerTable();
+		this.div.find('#d_ee_trigger_table').html( html ).buttonize();
+	}
+	
+	getSortedTriggers() {
+		// custom sort for display
+		return [].concat(
+			this.event.triggers.filter( function(row) { return row.type == 'manual'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'magic'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'schedule'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'single'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'interval'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'keyboard'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'startup'; } ),
+			this.event.triggers.filter( function(row) { return row.type == 'plugin'; } ),
+			this.event.triggers.filter( function(row) { return !(row.type || '').match(/^(schedule|startup|interval|single|manual|magic|keyboard|plugin)$/); } )
+		);
+	}
+	
+	getTriggerTable() {
+		// get html for trigger table
+		var self = this;
+		var html = '';
+		var cols = ['<i class="mdi mdi-checkbox-marked-outline"></i>', 'Description', 'Type', 'Tags', 'Actions'];
+		var add_link = '<div class="button small secondary" onClick="$P().editTrigger(-1)"><i class="mdi mdi-plus-circle-outline">&nbsp;</i>New Trigger...</div>';
+		
+		if (!this.event.triggers.length) return add_link;
+		
+		// custom sort
+		var rows = this.getSortedTriggers();
+		this.event.triggers = rows; // for idx-based selections to work, we have to commit the sort
+		
+		var targs = {
+			rows: rows,
+			cols: cols,
+			data_type: 'item',
+			class: 'data_grid c_trigger_grid',
+			empty_msg: add_link,
+			always_append_empty_msg: true,
+			grid_template_columns: '40px auto auto auto auto'
+		};
+		
+		html += this.getCompactGrid(targs, function(item, idx) {
+			var actions = [];
+			actions.push( '<button class="link" onClick="$P().editTrigger('+idx+')"><b>Edit</b></button>' );
+			actions.push( '<button class="link danger" onClick="$P().deleteTrigger('+idx+')"><b>Delete</b></button>' );
+			
+			var { nice_icon, nice_type, nice_desc } = self.getTriggerDisplayArgs(item);
+			
+			var tds = [
+				'<div class="td_drag_handle" style="cursor:default">' + self.getFormCheckbox({
+					checked: item.enabled,
+					onChange: '$P().toggleTriggerEnabled(this,' + idx + ')'
+				}) + '</div>',
+				'<div class="td_big nowrap">' + '<button class="link" onClick="$P().editTrigger('+idx+')">' + nice_desc.replace(/\&nbsp\;/g, '') + '</button></div>',
+				'<div class="ellip nowrap">' + nice_icon + nice_type + '</div>',
+				item.type.match(/^(schedule|single|interval|startup|keyboard)$/) ? self.getNiceTagList( item.tags || [] ) : 'n/a',
+				'<span class="nowrap">' + actions.join(' | ') + '</span>'
+			];
+			
+			if (!item.enabled) tds.className = 'disabled';
+			return tds;
+		} ); // getCompactGrid
+		
+		return html;
+	}
+	
+	toggleTriggerEnabled(elem, idx) {
+		// toggle trigger checkbox, actually do the enable/disable here, update row
+		var item = this.event.triggers[idx];
+		item.enabled = !!$(elem).is(':checked');
+		
+		if (item.enabled) $(elem).closest('ul').removeClass('disabled');
+		else $(elem).closest('ul').addClass('disabled');
+		
+		if (this.onAfterEditTrigger) this.onAfterEditTrigger(idx, item);
+		
+		this.triggerEditChange();
+	}
+	
+	editTrigger(idx) {
+		// show dialog to select trigger
+		var self = this;
+		var new_item = { type: 'schedule', enabled: true, minutes: [0] };
+		var trigger = (idx > -1) ? this.event.triggers[idx] : new_item;
+		var title = (idx > -1) ? "Editing Trigger" : "New Trigger";
+		var btn = (idx > -1) ? ['check-circle', "Accept"] : ['plus-circle', "Add Trigger"];
+		
+		// grab external ID if applicable (workflow node)
+		var ext_id = trigger.id || '';
+		if (ext_id) title += ` <div class="dialog_title_widget mobile_hide"><span class="monospace">${this.getNiceCopyableID(ext_id)}</span></div>`;
+		
+		// if user's tz differs from server tz, pre-populate timezone menu with user's zone
+		var ropts = Intl.DateTimeFormat().resolvedOptions();
+		var user_tz = app.user.timezone || ropts.timeZone;
+		if (user_tz != app.config.tz) new_item.timezone = user_tz;
+		
+		var html = '<div class="dialog_box_content maximize scroll">';
+		
+		// status
+		html += this.getFormRow({
+			id: 'd_et_status',
+			label: 'Status:',
+			content: this.getFormCheckbox({
+				id: 'fe_et_enabled',
+				label: 'Trigger Enabled',
+				checked: trigger.enabled
+			}),
+			caption: 'Enable or disable this trigger.'
+		});
+		
+		// type (tmode)
+		var tmode = '';
+		switch (trigger.type) {
+			case 'schedule':
+				tmode = 'hourly';
+				if (trigger.years && trigger.years.length) tmode = 'custom';
+				else if (trigger.months && trigger.months.length && trigger.weekdays && trigger.weekdays.length) tmode = 'custom';
+				else if (trigger.days && trigger.days.length && trigger.weekdays && trigger.weekdays.length) tmode = 'custom';
+				else if (trigger.months && trigger.months.length) tmode = 'yearly';
+				else if (trigger.weekdays && trigger.weekdays.length) tmode = 'weekly';
+				else if (trigger.days && trigger.days.length) tmode = 'monthly';
+				else if (trigger.hours && trigger.hours.length) tmode = 'daily';
+				else if (trigger.minutes && trigger.minutes.length) tmode = 'hourly';
+			break;
+			
+			default:
+				tmode = trigger.type;
+			break;
+		} // switch trigger.type
+		
+		html += this.getFormRow({
+			id: 'd_et_type',
+			label: 'Type:',
+			content: this.getFormMenuSingle({
+				id: 'fe_et_type',
+				title: "Select Trigger Type",
+				options: config.ui.event_trigger_type_menu,
+				value: tmode,
+				'data-shrinkwrap': 1
+			}),
+			caption: 'Select the desired type for the trigger.'
+		});
+		
+		// years
+		html += this.getFormRow({
+			id: 'd_et_years',
+			label: 'Years:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_years',
+				title: 'Select Years',
+				placeholder: '(Every Year)',
+				options: this.getYearOptions(trigger.years || []),
+				values: trigger.years || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// months
+		html += this.getFormRow({
+			id: 'd_et_months',
+			label: 'Months:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_months',
+				title: 'Select Months',
+				placeholder: '(Every Month)',
+				options: this.getMonthOptions(),
+				values: trigger.months || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// weekdays
+		html += this.getFormRow({
+			id: 'd_et_weekdays',
+			label: 'Weekdays:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_weekdays',
+				title: 'Select Weekdays',
+				placeholder: '(Every Weekday)',
+				options: this.getWeekdayOptions(),
+				values: trigger.weekdays || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// days
+		html += this.getFormRow({
+			id: 'd_et_days',
+			label: 'Month Days:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_days',
+				title: 'Select Days',
+				placeholder: '(Every Day)',
+				options: this.getDayOptions(),
+				values: trigger.days || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// hours
+		html += this.getFormRow({
+			id: 'd_et_hours',
+			label: 'Hours:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_hours',
+				title: 'Select Hours',
+				placeholder: '(Every Hour)',
+				options: this.getHourOptions(),
+				values: trigger.hours || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// minutes
+		html += this.getFormRow({
+			id: 'd_et_minutes',
+			label: 'Minutes:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_minutes',
+				title: 'Select Minutes',
+				placeholder: '(Every Minute)',
+				options: this.getMinuteOptions(),
+				values: trigger.minutes || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// crontab
+		html += this.getFormRow({
+			id: 'd_et_crontab',
+			label: 'Crontab Expression:',
+			content: this.getFormText({
+				id: 'fe_et_crontab',
+				class: 'monospace',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				maxlength: 64,
+				value: ''
+			}),
+			caption: 'Use this to import event trigger settings from a <a href="https://en.wikipedia.org/wiki/Cron#CRON_expression" target="_blank">Crontab expression</a>.  This is a string comprising five (or six) fields separated by white space that represents a set of dates/times.  Example: <b>30 4 1 * *</b> (First day of every month at 4:30 AM)'
+		});
+		
+		// startup
+		html += this.getFormRow({
+			id: 'd_et_startup_desc',
+			label: 'Description:',
+			content: inline_marked('Add this trigger to automatically run your job at ' + config.name + ' startup.  It is also highly recommended you add a [Max Queue Limit](#Docs/limits/max-queue-limit) to allow for queuing while servers connect.')
+		});
+		
+		// interval
+		html += this.getFormRow({
+			id: 'd_et_interval_desc',
+			label: 'Description:',
+			content: 'This schedule-based trigger allows you to run jobs based on a custom time interval, and a starting date/time.'
+		});
+		
+		html += this.getFormRow({
+			id: 'd_et_interval',
+			label: 'Interval:',
+			content: this.getFormRelativeTime({
+				id: 'fe_et_interval',
+				value: trigger.duration || 0
+			}),
+			caption: 'Specify the desired time interval between job launches.'
+		});
+		
+		// single shot
+		html += this.getFormRow({
+			id: 'd_et_single',
+			label: 'Single Shot:',
+			content: this.getFormText({
+				id: 'fe_et_single',
+				type: 'datetime-local',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				value: trigger.epoch ? this.formatDateISO( trigger.epoch, this.getUserTimezone() ) : ''
+			}),
+			caption: 'Select a single date/time when the event should run in your local timezone (' + this.getUserTimezone() + ').  This can accompany other triggers, or exist on its own.'
+		});
+		
+		// manual
+		html += this.getFormRow({
+			id: 'd_et_manual_desc',
+			label: 'Description:',
+			content: 'When manual mode is enabled, users and API keys with applicable privileges can run the event on demand.'
+		});
+		
+		// magic link
+		html += this.getFormRow({
+			id: 'd_et_magic_desc',
+			label: 'Description:',
+			content: 'Magic Link allows you to run the event by simply requesting a special unique URL.  You can also host a landing page to collect user input parameters for the job.'
+		});
+		if (trigger.token) {
+			// existing token, just pass the hash through
+			html += this.getFormRow({
+				id: 'd_et_magic_token',
+				label: 'Magic Links:',
+				content: this.getFormText({
+					id: 'fe_et_magic_token',
+					value: trigger.token,
+					style: 'display:none'
+				}) + `(Links cannot be retrieved)`,
+				caption: 'The magic links were provided to you at trigger creation time, and they can no longer be retrieved (this is by design).  If you have lost the links, delete and recreate the magic link trigger.'
+			});
+		}
+		else {
+			// new token, create plain key for copying
+			html += this.getFormRow({
+				id: 'd_et_magic_token',
+				label: 'Magic Links:',
+				content: this.getFormText({
+					id: 'fe_et_magic_token',
+					value: get_unique_id(64),
+					style: 'display:none',
+					'data-plainkey': '1'
+				}) + `<div class="button small secondary" onClick="$P().copyMagicLink()"><i class="mdi mdi-link-variant-plus">&nbsp;</i>Copy Direct Link</div>` + 
+					`<div class="button small secondary" style="margin-left:15px;" onClick="$P().copyMagicPage()"><i class="mdi mdi-link-variant-plus">&nbsp;</i>Copy Landing Page Link</div>`,
+				caption: 'Click the buttons above to copy the magic links to your clipboard.  The direct link will run the job immediately upon request, whereas the landing page will present the user a form to input event parameters and files before running.  These links are **only provided once** so make sure to grab them now!'
+			});
+		}
+		html += this.getFormRow({
+			id: 'd_et_magic_body',
+			label: 'Landing Page:',
+			content: this.getFormTextarea({
+				id: 'fe_et_magic_body',
+				rows: 1,
+				value: trigger.body || '',
+				style: 'display:none'
+			}) + `<div class="button small secondary" onClick="$P().editMagicBody()"><i class="mdi mdi-text-box-edit-outline">&nbsp;</i>Edit Page Content...</div>`,
+			caption: 'Optionally provide custom content for the landing page, using [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).'
+		});
+		
+		// keyboard
+		html += this.getFormRow({
+			id: 'd_et_keyboard_desc',
+			label: 'Description:',
+			content: 'Use this trigger to bind one or more keyboard shortcuts to the event.  Typing a shortcut will immediately run the event with the specified setings.'
+		});
+		html += this.getFormRow({
+			id: 'd_et_keyboard_keys',
+			label: 'Bound Keys:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_keyboard_keys',
+				title: 'Type new key combo:',
+				placeholder: '(None)',
+				options: (trigger.keys || []).map( function(key) { return { id: key, title: KeySelect.getKeyLabel(key) }; } ),
+				values: trigger.keys || [],
+				icon: 'keyboard-outline',
+				default_icon: 'keyboard-outline',
+				// 'data-shrinkwrap': 1
+			}),
+			caption: 'Click above to add a key combo, or click the "X" icons to remove.'
+		});
+		html += this.getFormRow({
+			id: 'd_et_keyboard_watch',
+			label: 'Redirect User:',
+			content: this.getFormCheckbox({
+				id: 'fe_et_keyboard_watch',
+				label: 'Watch Job Live',
+				checked: trigger.watch
+			}),
+			caption: 'This will redirect the user to the live job details page as soon as the job starts.'
+		});
+		
+		// catch-up
+		html += this.getFormRow({
+			id: 'd_et_catchup_desc',
+			label: 'Description:',
+			content: 'When Catch-Up Mode mode is enabled on an event, the scheduler will do its best to ensure that <i>every</i> scheduled job will run, even if they have to run late.  This is useful for time-sensitive events such as generating reports, and is designed to accompany other triggers.'
+		});
+		html += this.getFormRow({
+			id: 'd_et_time_machine',
+			label: 'Time Machine:',
+			content: this.getFormText({
+				id: 'fe_et_time_machine',
+				type: 'datetime-local',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				value: ''
+			}),
+			caption: 'Optionally adjust the internal clock for this event, to either repeat past jobs, or jump over a backlog.  Select a date/time in your local timezone (' + this.getUserTimezone() + ').  <button class="link" onClick="$P().resetTimeMachine()">Reset to Now</button>.'
+		});
+		
+		// every nth
+		html += this.getFormRow({
+			id: 'd_et_nth_desc',
+			label: 'Description:',
+			content: 'Every Nth is an optional schedule modifier that will skip over scheduled jobs based on a repeating pattern you specify, for e.g. every other, every 3rd, etc.  You set how many jobs to skip, and you can also reset the internal counter used to keep state (so you can control when the next job will run).'
+		});
+		html += this.getFormRow({
+			id: 'd_et_nth_every',
+			label: 'Run Every:',
+			content: this.getFormText({
+				id: 'fe_et_nth_every',
+				type: 'number',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				step: 1,
+				min: 2,
+				value: trigger.every || 2
+			}),
+			caption: 'Select which scheduled jobs to run.  `2` means run every other job, `3` means run every 3rd job, `10` means run every 10th job, etc.'
+		});
+		html += this.getFormRow({
+			id: 'd_et_nth_counter',
+			label: 'Reset Counter:',
+			content: this.getFormText({
+				id: 'fe_et_nth_counter',
+				type: 'number',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				step: 1,
+				min: 0,
+				value: ''
+			}),
+			caption: 'Optionally reset the internal counter for keeping track of the nth cadence.  Set to `1` to run the next scheduled job, `2` to skip one, etc.'
+		});
+		
+		// range
+		html += this.getFormRow({
+			id: 'd_et_range_desc',
+			label: 'Description:',
+			content: 'This modifier allows you to set a starting and/or ending date/time for the event.  Jobs will not be scheduled before your start date/time, nor after your end date/time.  This is designed to accompany other triggers.'
+		});
+		
+		// blackout
+		html += this.getFormRow({
+			id: 'd_et_blackout_desc',
+			label: 'Description:',
+			content: 'This modifier allows you to set a "blackout" period for the event, meaning jobs will not be scheduled during this time.  Examples include company holidays, and maintenance windows.  This is designed to accompany other triggers.'
+		});
+		
+		// delay
+		html += this.getFormRow({
+			id: 'd_et_delay_desc',
+			label: 'Description:',
+			content: 'This modifier allows you to set a custom delay for each job launched by the scheduler.  This does not affect jobs launched manually in the UI or via the API.'
+		});
+		html += this.getFormRow({
+			id: 'd_et_delay',
+			label: 'Delay (Seconds):',
+			content: this.getFormText({
+				id: 'fe_et_delay',
+				type: 'number',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				min: 1,
+				value: trigger.duration || 1
+			}),
+			caption: 'Specify your custom job starting delay in seconds.'
+		});
+		
+		// plugin
+		html += this.getFormRow({
+			id: 'd_et_plugin',
+			label: 'Trigger Plugin:',
+			content: this.getFormMenuSingle({
+				id: 'fe_et_plugin',
+				title: 'Select Scheduler Plugin',
+				options: app.plugins.filter( function(plugin) { return plugin.type == 'scheduler'; } ),
+				value: trigger.plugin_id,
+				default_icon: 'power-plug-outline'
+			}),
+			caption: 'Select Plugin to use for custom scheduling.'
+		});
+		
+		// plugin params
+		html += this.getFormRow({
+			id: 'd_et_plugin_params',
+			label: 'Parameters:',
+			content: '<div id="d_et_param_editor" class="plugin_param_editor_cont"></div>',
+			caption: 'Enter values for all the Plugin-defined parameters here.'
+		});
+		
+		// range & blackout share these:
+		html += this.getFormRow({
+			id: 'd_et_range_start',
+			label: 'Start Date/Time:',
+			content: this.getFormText({
+				id: 'fe_et_range_start',
+				type: 'datetime-local',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				value: trigger.start ? this.formatDateISO( trigger.start, this.getUserTimezone() ) : ''
+			}),
+			caption: 'Select a start date/time in your local timezone(' + this.getUserTimezone() + ').'
+		});
+		html += this.getFormRow({
+			id: 'd_et_range_end',
+			label: 'End Date/Time:',
+			content: this.getFormText({
+				id: 'fe_et_range_end',
+				type: 'datetime-local',
+				spellcheck: 'false',
+				autocomplete: 'off',
+				value: trigger.end ? this.formatDateISO( trigger.end, this.getUserTimezone() ) : ''
+			}),
+			caption: 'Select an end date/time in your local timezone (' + this.getUserTimezone() + ').'
+		});
+		
+		// precision desc
+		html += this.getFormRow({
+			id: 'd_et_precision_desc',
+			label: 'Description:',
+			content: 'This modifier allows you to set the precise seconds when each job should launch via the scheduler.  This does not affect jobs launched manually in the UI or via the API.'
+		});
+		
+		// precision seconds
+		html += this.getFormRow({
+			id: 'd_et_seconds',
+			label: 'Seconds:',
+			content: this.getFormMenuMulti({
+				id: 'fe_et_seconds',
+				title: 'Select Seconds',
+				placeholder: '(On The Minute)',
+				options: this.getSecondOptions(),
+				values: trigger.seconds || [],
+				'data-hold': 1,
+				'data-shrinkwrap': 1,
+				'data-select-all': 1,
+				// 'data-compact': 1
+			})
+		});
+		
+		// quiet desc
+		html += this.getFormRow({
+			id: 'd_et_quiet_desc',
+			label: 'Description:',
+			content: 'This modifier allows you to hide jobs from the UI, and/or delete jobs after completion.  This does not affect jobs launched manually in the UI or via the API.'
+		});
+		
+		// quiet invisible
+		html += this.getFormRow({
+			id: 'd_et_quiet_invisible',
+			label: 'Visibility:',
+			content: this.getFormCheckbox({
+				id: 'fe_et_quiet_invisible',
+				label: 'Invisible Jobs',
+				checked: !!trigger.invisible
+			}),
+			caption: 'Make all running jobs completely invisible to the UI.'
+		});
+		
+		// quiet ephemeral
+		html += this.getFormRow({
+			id: 'd_et_quiet_ephemeral',
+			label: 'Permanence:',
+			content: this.getFormCheckbox({
+				id: 'fe_et_quiet_ephemeral',
+				label: 'Ephemeral Jobs',
+				checked: !!trigger.ephemeral
+			}),
+			caption: 'Delete all jobs after completion.  Note that if a job produces output files, it automatically disables ephemeral mode.'
+		});
+		
+		// timezone (shared by schedule and crontab types)
+		var zones = [
+			['', "Server Default (" + app.config.tz + ")"],
+			[user_tz, "My Timezone (" + user_tz + ")"]
+		].concat(app.config.intl.timezones);
+		
+		html += this.getFormRow({
+			id: 'd_et_tz',
+			label: 'Timezone:',
+			content: this.getFormMenuSingle({
+				id: 'fe_et_tz',
+				title: 'Select Timezone',
+				options: zones,
+				value: trigger.timezone || ''
+			}),
+			caption: 'Select the desired timezone for the trigger.'
+		});
+		
+		// tags
+		html += this.getFormRow({
+			id: 'd_et_tags',
+			label: "Tags:",
+			content: this.getFormMenuMulti({
+				id: 'fe_et_tags',
+				title: "Select tags for trigger",
+				placeholder: "(Use event defaults)",
+				options: app.tags,
+				values: trigger.tags || [],
+				default_icon: 'tag-outline',
+				// 'data-shrinkwrap': 1
+			}),
+			caption: "Optionally add jobs tags for the trigger."
+		});
+		
+		// user form fields
+		html += this.getFormRow({
+			id: 'd_et_params',
+			label: 'User Parameters:',
+			content: '<div class="plugin_param_editor_cont">' + this.getParamEditor(this.event.fields || [], trigger.params || {}) + '</div>',
+			caption: 'Set the event-defined parameters for the trigger.'
+		});
+		
+		html += '</div>';
+		Dialog.confirm( title, html, btn, function(result) {
+			if (!result) return;
+			app.clearError();
+			
+			trigger = {
+				enabled: $('#fe_et_enabled').is(':checked'),
+				type: $('#fe_et_type').val()
+			};
+			
+			// copy over external id if present (workflow node)
+			if (ext_id) trigger.id = ext_id;
+			
+			switch (trigger.type) {
+				case 'custom':
+					trigger.type = 'schedule';
+					if ($('#fe_et_years').val().length) trigger.years = $('#fe_et_years').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_months').val().length) trigger.months = $('#fe_et_months').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_weekdays').val().length) trigger.weekdays = $('#fe_et_weekdays').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_days').val().length) trigger.days = $('#fe_et_days').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_hours').val().length) trigger.hours = $('#fe_et_hours').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_minutes').val().length) trigger.minutes = $('#fe_et_minutes').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'yearly':
+					trigger.type = 'schedule';
+					if ($('#fe_et_months').val().length) trigger.months = $('#fe_et_months').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_days').val().length) trigger.days = $('#fe_et_days').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_hours').val().length) trigger.hours = $('#fe_et_hours').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_minutes').val().length) trigger.minutes = $('#fe_et_minutes').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'monthly':
+					trigger.type = 'schedule';
+					if ($('#fe_et_days').val().length) trigger.days = $('#fe_et_days').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_hours').val().length) trigger.hours = $('#fe_et_hours').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_minutes').val().length) trigger.minutes = $('#fe_et_minutes').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'weekly':
+					trigger.type = 'schedule';
+					if ($('#fe_et_weekdays').val().length) trigger.weekdays = $('#fe_et_weekdays').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_days').val().length) trigger.days = $('#fe_et_days').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_hours').val().length) trigger.hours = $('#fe_et_hours').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_minutes').val().length) trigger.minutes = $('#fe_et_minutes').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'daily':
+					trigger.type = 'schedule';
+					if ($('#fe_et_hours').val().length) trigger.hours = $('#fe_et_hours').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_minutes').val().length) trigger.minutes = $('#fe_et_minutes').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'hourly':
+					trigger.type = 'schedule';
+					if ($('#fe_et_minutes').val().length) trigger.minutes = $('#fe_et_minutes').val().map( function(v) { return parseInt(v); } );
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'crontab':
+					trigger.type = 'schedule';
+					var cron_exp = $('#fe_et_crontab').val().toLowerCase();
+					if (!cron_exp) return app.badField('#fe_et_crontab', "Please enter a crontab date/time expression.");
+					
+					// validate, convert to trigger object
+					var ctrigger = null;
+					try {
+						ctrigger = parse_crontab( cron_exp, $('#fe_ee_title').val() );
+					}
+					catch (e) {
+						return app.badField('#fe_et_crontab', e.toString());
+					}
+					
+					merge_hash_into(trigger, ctrigger);
+					if ($('#fe_et_tz').val().length) trigger.timezone = $('#fe_et_tz').val();
+				break;
+				
+				case 'startup':
+					// startup mode (no options)
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'startup', enabled: true })) {
+						return app.doError("Sorry, you can only have one startup trigger defined per event.");
+					}
+				break;
+				
+				case 'interval':
+					// interval mode
+					trigger.duration = parseInt( $('#fe_et_interval').val() );
+					if (!trigger.duration) return app.badField('#fe_et_interval_val', "Please enter or select a non-zero interval time.");
+					
+					trigger.start = self.parseDateTZ( $('#fe_et_range_start').val(), self.getUserTimezone() ) || normalize_time(app.epoch, { sec:1 });
+					if (!trigger.start) return app.badField('#fe_et_range_start', "Please enter a valid date/time when the interval should start.");
+					
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'precision', enabled: true })) {
+						return app.doError("Sorry, the interval and precision triggers are mutually exclusive.");
+					}
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'delay', enabled: true })) {
+						return app.doError("Sorry, the interval and delay triggers are mutually exclusive.");
+					}
+				break;
+				
+				case 'single':
+					// single shot
+					trigger.epoch = self.parseDateTZ( $('#fe_et_single').val(), self.getUserTimezone() );
+					if (!trigger.epoch) return app.badField('#fe_et_single', "Please enter a valid date/time when the event should run.");
+				break;
+				
+				case 'manual':
+					// manual mode (no options)
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'manual', enabled: true })) {
+						return app.doError("Sorry, you can only have one manual trigger defined per event.");
+					}
+				break;
+				
+				case 'magic':
+					// magic link
+					if ($('#fe_et_magic_token').data('plainkey')) trigger.key = $('#fe_et_magic_token').val();
+					else trigger.token = $('#fe_et_magic_token').val();
+					
+					trigger.body = $('#fe_et_magic_body').val();
+				break;
+				
+				case 'keyboard':
+					// keyboard shortcut
+					trigger.keys = $('#fe_et_keyboard_keys').val();
+					if (!trigger.keys.length) return app.badField('#fe_et_keyboard_keys', "Please add one or more keyboard shortcuts for the trigger.");
+					trigger.watch = $('#fe_et_keyboard_watch').is(':checked');
+				break;
+				
+				case 'catchup':
+					// time machine
+					if ($('#fe_et_time_machine').val()) {
+						if (!self.event.update_state) self.event.update_state = {};
+						self.event.update_state.cursor = self.parseDateTZ( $('#fe_et_time_machine').val(), self.getUserTimezone() );
+					}
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'catchup', enabled: true })) {
+						return app.doError("Sorry, you can only have one catch-up trigger defined per event.");
+					}
+				break;
+				
+				case 'nth':
+					// every nth
+					trigger.every = parseInt( $('#fe_et_nth_every').val() ) || 0;
+					if (trigger.every < 2) return app.badField('#fe_et_nth_every', "Please enter a valid number to set the nth size.");
+					if ($('#fe_et_nth_counter').val().length) {
+						if (!self.event.update_state) self.event.update_state = {};
+						self.event.update_state.nth = parseInt( $('#fe_et_nth_counter').val() ) || 0;
+					}
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'nth', enabled: true })) {
+						return app.doError("Sorry, you can only have one every-nth trigger defined per event.");
+					}
+				break;
+				
+				case 'range':
+					trigger.start = self.parseDateTZ( $('#fe_et_range_start').val(), self.getUserTimezone() ) || 0;
+					trigger.end = self.parseDateTZ( $('#fe_et_range_end').val(), self.getUserTimezone() ) || 0;
+					if (trigger.start && trigger.end && (trigger.start > trigger.end)) {
+						return app.badField('#fe_et_range_start', "Invalid date range entered.  The start date cannot come after the end date.");
+					}
+				break;
+				
+				case 'blackout':
+					trigger.start = self.parseDateTZ( $('#fe_et_range_start').val(), self.getUserTimezone() ) || 0;
+					trigger.end = self.parseDateTZ( $('#fe_et_range_end').val(), self.getUserTimezone() ) || 0;
+					if (!trigger.start) return app.badField('#fe_et_range_start', "Please select both a start and an end for the range.");
+					if (!trigger.end) return app.badField('#fe_et_range_end', "Please select both a start and an end for the range.");
+					if (trigger.start > trigger.end) return app.badField('#fe_et_range_start', "Invalid date range entered.  The start date cannot come after the end date.");
+				break;
+				
+				case 'delay':
+					// starting delay
+					if ((idx == -1) && find_object(self.event.triggers, { type: 'delay' })) {
+						return app.doError("Sorry, you can only have one delay trigger defined per event.");
+					}
+					trigger.duration = parseInt( $('#fe_et_delay').val() );
+					if (!trigger.duration) return app.badField('#fe_et_delay', "Please enter or select the number of seconds to delay.");
+					
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'interval', enabled: true })) {
+						return app.doError("Sorry, the delay and interval triggers are mutually exclusive.");
+					}
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'precision', enabled: true })) {
+						return app.doError("Sorry, the delay and precision triggers are mutually exclusive.");
+					}
+				break;
+				
+				case 'precision':
+					// precision (seconds)
+					trigger.seconds = $('#fe_et_seconds').val().map( function(v) { return parseInt(v); } );
+					
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'precision', enabled: true })) {
+						return app.doError("Sorry, you can only have one precision trigger defined per event.");
+					}
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'interval', enabled: true })) {
+						return app.doError("Sorry, the precision and interval triggers are mutually exclusive.");
+					}
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'delay', enabled: true })) {
+						return app.doError("Sorry, the precision and delay triggers are mutually exclusive.");
+					}
+				break;
+				
+				case 'quiet':
+					// quiet mode
+					trigger.invisible = $('#fe_et_quiet_invisible').is(':checked');
+					trigger.ephemeral = $('#fe_et_quiet_ephemeral').is(':checked');
+					if (!trigger.invisible && !trigger.ephemeral) {
+						return app.doError("You must select at least one mode for the quiet modifier.");
+					}
+				break;
+				
+				case 'plugin':
+					trigger.plugin_id = $('#fe_et_plugin').val();
+					if (!trigger.plugin_id) return app.badField('#fe_et_plugin', "Please select a Plugin for scheduling.");
+					trigger.params = self.getPluginParamValues( trigger.plugin_id );
+					if (!trigger.params) return false; // invalid
+					
+					if ((idx == -1) && trigger.enabled && find_object(self.event.triggers, { type: 'plugin', enabled: true })) {
+						return app.doError("Sorry, you can only have one plugin trigger defined per event.");
+					}
+				break;
+			} // switch trigger.type
+			
+			// grab tags and params for specific trigger types
+			if (trigger.type.match(/^(schedule|single|interval|startup|keyboard)$/)) {
+				trigger.tags = $('#fe_et_tags').val();
+				trigger.params = self.getParamValues(self.event.fields || []);
+				if (!trigger.params) return; // invalid
+			}
+			
+			// see if we need to add or replace
+			if (idx == -1) {
+				self.event.triggers.push(trigger);
+			}
+			else self.event.triggers[idx] = trigger;
+			
+			// self.dirty = true;
+			Dialog.hide();
+			self.renderTriggerTable();
+			if (self.onAfterEditTrigger) self.onAfterEditTrigger(idx, trigger);
+			self.triggerEditChange();
+		} ); // Dialog.confirm
+		
+		var change_trigger_type = function(new_type) {
+			$('.dialog_box_content .form_row').hide();
+			$('#d_et_status, #d_et_type').show();
+			var new_btn_label = 'Add Trigger';
+			
+			switch (new_type) {
+				case 'custom':
+					$('#d_et_years').show();
+					$('#d_et_months').show();
+					$('#d_et_weekdays').show();
+					$('#d_et_days').show();
+					$('#d_et_hours').show();
+					$('#d_et_minutes').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'yearly':
+					$('#d_et_months').show();
+					$('#d_et_days').show();
+					$('#d_et_hours').show();
+					$('#d_et_minutes').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'monthly':
+					$('#d_et_days').show();
+					$('#d_et_hours').show();
+					$('#d_et_minutes').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'weekly':
+					$('#d_et_weekdays').show();
+					$('#d_et_hours').show();
+					$('#d_et_minutes').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'daily':
+					$('#d_et_hours').show();
+					$('#d_et_minutes').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'hourly':
+					$('#d_et_minutes').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'crontab':
+					$('#d_et_crontab').show();
+					$('#d_et_tz').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'startup':
+					$('#d_et_startup_desc').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'interval':
+					$('#d_et_interval_desc').show();
+					$('#d_et_interval').show();
+					$('#d_et_range_start').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'single':
+					$('#d_et_single').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'manual':
+					$('#d_et_manual_desc').show();
+				break;
+				
+				case 'magic':
+					$('#d_et_magic_desc').show();
+					$('#d_et_magic_token').show();
+					$('#d_et_magic_body').show();
+				break;
+				
+				case 'keyboard':
+					$('#d_et_keyboard_desc').show();
+					$('#d_et_keyboard_keys').show();
+					$('#d_et_keyboard_watch').show();
+					$('#d_et_tags').show();
+					$('#d_et_params').show();
+				break;
+				
+				case 'catchup':
+					$('#d_et_catchup_desc').show();
+					$('#d_et_time_machine').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'nth':
+					$('#d_et_nth_desc').show();
+					$('#d_et_nth_every').show();
+					$('#d_et_nth_counter').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'range':
+					$('#d_et_range_desc').show();
+					$('#d_et_range_start').show();
+					$('#d_et_range_end').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'blackout':
+					$('#d_et_blackout_desc').show();
+					$('#d_et_range_start').show();
+					$('#d_et_range_end').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'delay':
+					$('#d_et_delay_desc').show();
+					$('#d_et_delay').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'precision':
+					$('#d_et_precision_desc').show();
+					$('#d_et_seconds').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'quiet':
+					$('#d_et_quiet_desc').show();
+					$('#d_et_quiet_invisible').show();
+					$('#d_et_quiet_ephemeral').show();
+					new_btn_label = 'Add Modifier';
+				break;
+				
+				case 'plugin':
+					$('#d_et_plugin').show();
+					$('#d_et_plugin_params').show();
+					$('#d_et_param_editor').html( self.getPluginParamEditor( $('#fe_et_plugin').val(), trigger.params || {} ) ).buttonize();
+					new_btn_label = 'Add Modifier';
+				break;
+			} // switch new_type
+			
+			if (idx == -1) {
+				$('#btn_dialog_confirm > span').html( new_btn_label );
+			}
+			
+			app.clearError();
+			Dialog.autoResize();
+		}; // change_action_type
+		
+		$('#fe_et_type').on('change', function() {
+			change_trigger_type( $(this).val() );
+		}); // type change
+		
+		$('#fe_et_plugin').on('change', function() {
+			$('#d_et_param_editor').html( self.getPluginParamEditor( $(this).val(), trigger.params || {} ) ).buttonize();
+			Dialog.autoResize();
+		}); // type change
+		
+		SingleSelect.init( $('#fe_et_type, #fe_et_tz, #fe_et_plugin') );
+		MultiSelect.init( $('#fe_et_years, #fe_et_months, #fe_et_weekdays, #fe_et_days, #fe_et_hours, #fe_et_minutes, #fe_et_seconds, #fe_et_tags') );
+		RelativeTime.init( $('#fe_et_interval') );
+		KeySelect.init( '#fe_et_keyboard_keys' );
+		// this.updateAddRemoveMe('#fe_eja_email');
+		
+		change_trigger_type( tmode );
+	}
+	
+	resetTimeMachine() {
+		// set time machine date/time to now
+		$('#fe_et_time_machine').val( this.formatDateISO( time_now(), this.getUserTimezone() ) );
+		this.triggerEditChange();
+	}
+	
+	copyMagicLink() {
+		// copy magic link (direct job run)
+		copyToClipboard( config.base_app_url + '/api/app/magic/v1/' + $('#fe_et_magic_token').val() );
+		app.showMessage('info', "The magic link was copied to your clipboard.");
+	}
+	
+	copyMagicPage() {
+		// copy link to magic landing page
+		copyToClipboard( config.base_app_url + '/api/app/form/v1/' + $('#fe_et_magic_token').val() );
+		app.showMessage('info', "The landing page link was copied to your clipboard.");
+	}
+	
+	editMagicBody() {
+		// edit magic link landing page body markdown
+		this.editCodeAuto({
+			title: "Edit Landing Page Content", 
+			code: $('#fe_et_magic_body').val(), 
+			format: 'gfm',
+			callback: function(new_value) {
+				$('#fe_et_magic_body').val( new_value );
+			}
+		});
+	}
+	
+	deleteTrigger(idx) {
+		// delete selected trigger
+		var trigger = this.event.triggers[idx];
+		
+		this.event.triggers.splice( idx, 1 );
+		this.renderTriggerTable();
+		
+		if (this.onAfterEditTrigger) {
+			trigger.deleted = true;
+			this.onAfterEditTrigger(idx, trigger);
+		}
+		
+		this.triggerEditChange();
+	}
+	
+	getYearOptions(values) {
+		// get locale-formatted year numbers for menu
+		var start_year = yyyy();
+		var end_year = start_year + 10;
+		var options = [];
+		
+		(values || []).map( year => parseInt(year) ).forEach( function(year) {
+			if (year < start_year) start_year = year;
+			if (year > end_year) end_year = year;
+		} );
+		
+		for (var year = start_year; year <= end_year; year++) {
+			var date = new Date( year, 5, 15, 12, 30, 30, 0 );
+			var label = this.formatDate( date.getTime() / 1000, { year: 'numeric' } );
+			options.push([ ''+year, label ]);
+		}
+		
+		return options;
+	}
+	
+	getMonthOptions() {
+		// get locale-formatted month names for menu
+		var cur_year = yyyy();
+		var options = [];
+		
+		for (var month = 1; month <= 12; month++) {
+			var date = new Date( cur_year, month - 1, 15, 12, 30, 30, 0 );
+			// var label = this.formatDate( date.getTime() / 1000, { month: 'short' } );
+			// options.push([ ''+month, label ]);
+			options.push({
+				id: '' + month,
+				title: this.formatDate( date.getTime() / 1000, { month: 'long' } ),
+				abbrev: this.formatDate( date.getTime() / 1000, { month: 'short' } )
+			});
+		}
+		
+		return options;
+	}
+	
+	getWeekdayOptions() {
+		// get locale-formatted weekday names for menu
+		var cur_year = yyyy();
+		var options = [];
+		
+		// find nearest sunday
+		var date = new Date( cur_year, 5, 15, 12, 30, 30, 0 );
+		while (date.getDay() != 0) {
+			date.setTime( date.getTime() + 86400000 );
+		}
+		while (options.length < 7) {
+			// var label = this.formatDate( date.getTime() / 1000, { weekday: 'short', timeZone: false } );
+			// options.push([ ''+options.length, label ]);
+			options.push({
+				id: '' + options.length,
+				title: this.formatDate( date.getTime() / 1000, { weekday: 'long', timeZone: false } ),
+				abbrev: this.formatDate( date.getTime() / 1000, { weekday: 'short', timeZone: false } )
+			});
+			date.setTime( date.getTime() + 86400000 );
+		}
+		
+		return options;
+	}
+	
+	getDayOptions() {
+		// get locale-formatted month days for a 31-day month
+		var cur_year = yyyy();
+		var options = [];
+		
+		var date = new Date( cur_year, 6, 1, 12, 30, 30, 0 );
+		var num = 1;
+		while (options.length < 31) {
+			var label = this.formatDate( date.getTime() / 1000, { day: 'numeric', timeZone: false } );
+			options.push([ ''+num, label ]);
+			date.setTime( date.getTime() + 86400000 );
+			num++;
+		}
+		
+		options.push({
+			group: 'Special',
+			id: '-1',
+			title: "(Last Day of Month)",
+			abbrev: "(Last Day)"
+		});
+		options.push({
+			id: '-2',
+			title: "(2nd Last Day)",
+			abbrev: "(2nd Last)"
+		});
+		options.push({
+			id: '-3',
+			title: "(3rd Last Day)",
+			abbrev: "(3rd Last)"
+		});
+		options.push({
+			id: '-4',
+			title: "(4th Last Day)",
+			abbrev: "(4th Last)"
+		});
+		options.push({
+			id: '-5',
+			title: "(5th Last Day)",
+			abbrev: "(5th Last)"
+		});
+		options.push({
+			id: '-6',
+			title: "(6th Last Day)",
+			abbrev: "(6th Last)"
+		});
+		options.push({
+			id: '-7',
+			title: "(7th Last Day)",
+			abbrev: "(7th Last)"
+		});
+		
+		return options;
+	}
+	
+	getHourOptions() {
+		// get locale-formatted hours for a full day
+		var cur_year = yyyy();
+		var options = [];
+		
+		var date = new Date( cur_year, 6, 1, 0, 30, 30, 0 );
+		while (options.length < 24) {
+			var label = this.formatDate( date.getTime() / 1000, { hour: 'numeric', timeZone: false } );
+			options.push([ ''+options.length, label ]);
+			date.setTime( date.getTime() + 3600000 );
+		}
+		
+		return options;
+	}
+	
+	getMinuteOptions() {
+		// get locale-formatted minutes for a full hour
+		var cur_year = yyyy();
+		var options = [];
+		
+		var date = new Date( cur_year, 6, 1, 0, 0, 0, 0 );
+		var opts = this.getDateOptions({ hour: 'numeric', minute: '2-digit', timeZone: false });
+		var formatter = new Intl.DateTimeFormat( opts.locale, opts );
+		
+		while (options.length < 60) {
+			var parts = formatter.formatToParts(date);
+			var label = (find_object(parts, { type: 'literal' }) || { value: ':' }).value + find_object(parts, { type: 'minute' }).value;
+			options.push([ ''+options.length, label.trim() ]);
+			date.setTime( date.getTime() + 60000 );
+		}
+		
+		return options;
+	}
+	
+	getSecondOptions() {
+		// get locale-formatted seconds for a full minute (precision option)
+		var cur_year = yyyy();
+		var options = [];
+		
+		var date = new Date( cur_year, 6, 1, 0, 0, 0, 0 );
+		var opts = this.getDateOptions({ minute: '2-digit', second: '2-digit', timeZone: false });
+		var formatter = new Intl.DateTimeFormat( opts.locale, opts );
+		
+		while (options.length < 60) {
+			var parts = formatter.formatToParts(date);
+			var label = (find_object(parts, { type: 'literal' }) || { value: ':' }).value + find_object(parts, { type: 'second' }).value;
+			options.push([ ''+options.length, label.trim() ]);
+			date.setTime( date.getTime() + 1000 );
+		}
+		
+		return options;
+	}
+	
+	changePlugin() {
+		// change plugin, switch event params and redraw param editor
+		var event = this.event;
+		
+		var old_params = this.getPluginParamValues( event.plugin, true );
+		if (old_params) this.pluginParamCache[event.plugin] = old_params;
+		
+		event.plugin = this.div.find('#fe_ee_plugin').val();
+		this.event.params = this.pluginParamCache[event.plugin] || {};
+		
+		this.renderPluginParamEditor();
+	}
+	
+	renderPluginParamEditor() {
+		// render plugin param editor
+		var html = this.getPluginParamEditor( this.div.find('#fe_ee_plugin').val(), this.event.params, true );
+		this.div.find('#d_ee_params').html( html ).buttonize();
+	}
+	
+	get_event_form_json(force) {
+		// get api key elements from form, used for new or edit
+		var event = this.event;
+		
+		event.title = $('#fe_ee_title').val().trim();
+		event.enabled = $('#fe_ee_enabled').is(':checked') ? true : false;
+		event.icon = $('#fe_ee_icon').val();
+		event.category = $('#fe_ee_cat').val();
+		event.tags = $('#fe_ee_tags').val();
+		event.targets = $('#fe_ee_targets').val();
+		event.expression = $('#fe_ee_expression').val();
+		event.algo = $('#fe_ee_algo').val();
+		event.plugin = $('#fe_ee_plugin').val();
+		event.notes = $('#fe_ee_notes').val();
+		
+		event.params = this.getPluginParamValues( event.plugin, force );
+		if (!event.params) return false; // invalid
+		
+		if (!force) {
+			if (!event.title.length) {
+				return app.badField('#fe_ee_title', "Please enter a title for the event.");
+			}
+			if (!event.targets.length) {
+				return app.badField('#fe_ee_targets', "Please select one or more targets to run the event.");
+			}
+		}
+		
+		return event;
+	}
+	
+	onStatusUpdate(data) {
+		// called every 1s from websocket
+		switch (this.args.sub) {
+			case 'list': this.handleStatusUpdateList(data); break;
+			case 'view': this.handleStatusUpdateView(data); break;
+		}
+	}
+	
+	onDataUpdate(key, data, item) {
+		// refresh list if events were updated
+		if ((key == 'events') && (this.args.sub == 'list')) {
+			this.gosub_list(this.args);
+		}
+		else if ((key == 'stats') && (this.args.sub == 'view')) {
+			// recompute upcoming jobs every minute
+			this.autoExpireUpcomingJobs();
+			this.renderUpcomingJobs();
+			this.updateJobHistoryDayGraph();
+		}
+		else if (item) {
+			// check for single event update
+			if ((this.args.sub == 'view') && this.event && (item.id == this.event.id)) {
+				this.gosub_view(this.args);
+			}
+			else if ((this.args.sub == 'edit') && this.event && (item.id == this.event.id)) {
+				// we may have to interrupt the user with a notification here
+				// make sure user has an out-of-date copy, and is not currently saving
+				if ((this.event.revision != item.revision) && !this.saving) {
+					if ($('.button.save').hasClass('primary')) {
+						// worst case scenario -- we have made local changes but someone ELSE just saved
+						app.showMessage('suspended', "This " + (this.workflow ? 'workflow' : 'event') + " has just been updated by another user, creating a conflict.  You will not be able to save your changes until you refresh.");
+					}
+					else {
+						// ah, no local changes, so update with remote changes
+						app.showMessage('info', "This " + (this.workflow ? 'workflow' : 'event') + " has just been updated by another user.  The changes have been merged into your copy.");
+						
+						// we might have to interrupt a dialog, solder or drag
+						// Note: This will reset the user's scroll / zoom / selection, so it's a bit disruptive
+						if (CodeEditor.active || Dialog.active || Popover.enabled) {
+							Popover.detach();
+							CodeEditor.hide();
+							Dialog.hide();
+						}
+						else if (this.wfSoldering) {
+							this.cancelSolder();
+						}
+						
+						delete this.event;
+						delete this.workflow;
+						delete this.wfScroll;
+						delete this.wfZoom;
+						delete this.wfEdit;
+						delete this.wfSelection;
+						delete this.wfSnapshots;
+						delete this.wfSnapIdx;
+						delete this.wfDragging;
+						delete this.wfSoldering;
+						delete this.wfPausedSolder;
+						delete this.wfTool;
+						delete this.wfDrawSelection;
+						delete this.saving;
+						delete this.params;
+						delete this.limits;
+						delete this.actions;
+						
+						delete this.args.rollback; // just in case
+						this.gosub_edit(this.args);
+					}
+				} // other
+			} // edit
+		} // item
+	}
+	
+	onResize() {
+		// called when page is resized
+		if (this.wfZoom) this.renderWFConnections();
+	}
+	
+	onDeactivate() {
+		// called when page is deactivated
+		delete this.jobs;
+		delete this.event;
+		delete this.upcomingJobs;
+		delete this.upcomingOffset;
+		delete this.activeOffset;
+		delete this.queueOffset;
+		delete this.revisionOffset;
+		delete this.revisions;
+		delete this.queuedJobs;
+		
+		delete this.params;
+		delete this.limits;
+		delete this.actions;
+		
+		delete this.workflow;
+		delete this.wfScroll;
+		delete this.wfZoom;
+		delete this.wfSelection;
+		
+		delete this.pluginParamCache;
+		delete this.originTab;
+		
+		delete this.saving;
+		
+		// destroy charts if applicable (view page)
+		if (this.charts) {
+			for (var key in this.charts) {
+				this.charts[key].destroy();
+			}
+			delete this.charts;
+		}
+		
+		this.cleanupBoxButtonFloater();
+		this.cleanupRevHistory();
+		this.div.html( '' );
+		return true;
+	}
+	
+};

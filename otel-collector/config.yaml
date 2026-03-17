@@ -1,0 +1,567 @@
+# otel-collector/config.yaml
+# --------------------------
+# OpenTelemetry Collector configuration for the Observability Learning project.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PIPELINE MODEL — how data flows through the Collector
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   Applications
+#       │
+#       │  OTLP/gRPC  (port 4317)
+#       │  OTLP/HTTP  (port 4318)
+#       ▼
+#   ┌──────────────────────────────────────────────────────────────────────┐
+#   │  RECEIVERS                                                           │
+#   │  Accept telemetry from applications.                                 │
+#   │  Think of a receiver as an INPUT plug.                               │
+#   │  It speaks a protocol (OTLP, Prometheus, Jaeger…) and hands         │
+#   │  received data to the pipeline.                                      │
+#   └──────────────────────────┬───────────────────────────────────────────┘
+#                              │
+#                              ▼
+#   ┌──────────────────────────────────────────────────────────────────────┐
+#   │  PROCESSORS                                                          │
+#   │  Transform, enrich, filter, or batch telemetry.                      │
+#   │  Think of processors as a conveyor belt with stations.               │
+#   │  Each station does one job (memory control, batching, enrichment).   │
+#   │                                                                      │
+#   │  ORDER MATTERS.  The recommended order is:                           │
+#   │    1. memory_limiter   ← always first: gate before anything else     │
+#   │    2. resource         ← enrich with standard attributes             │
+#   │    3. attributes/*     ← modify span/metric/log attributes           │
+#   │    4. batch            ← always last: buffer before export           │
+#   └──────────────────────────┬───────────────────────────────────────────┘
+#                              │
+#                 ┌────────────┴────────────┬──────────────────────────┐
+#                 │                         │                          │
+#                 ▼                         ▼                          ▼
+#   ┌───────────────────────┐  ┌────────────────────────┐  ┌──────────────────────────┐
+#   │  debug exporter       │  │  prometheus exporter   │  │  otlp/tempo exporter     │
+#   │  Prints to stdout     │  │  (port 8889)           │  │  Sends spans to Tempo    │
+#   │  for terminal debug   │  │  Metrics only          │  │  over OTLP/gRPC          │
+#   └───────────────────────┘  └──────────┬─────────────┘  └────────────┬─────────────┘
+#                                          │                              │
+#                                 ◄── Prometheus scrapes            Tempo :4317
+#                                     every 15 s                    (trace storage)
+#                                          │                              │
+#                                  Prometheus TSDB               Tempo query API
+#                                   (port 9090)                   (port 3200)
+#
+#   (logs: separate pipeline)
+#
+#   ┌───────────────────────┐
+#   │  loki exporter         │
+#   │  POST /v1/push         │
+#   │  Logs only             │
+#   └─────────────┬─────────┘
+#                 │
+#            Loki :3100
+#           (log storage)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW PIPELINES WIRE EVERYTHING TOGETHER
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A pipeline is a named data path for ONE signal type:
+#   traces   → for OpenTelemetry spans
+#   metrics  → for counters, histograms, gauges
+#   logs     → for log records
+#
+# Each pipeline names which receivers feed it, which processors transform data,
+# and which exporters consume it.  A single receiver can feed multiple pipelines;
+# a single exporter can receive from multiple pipelines.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# EXTENSIONS
+# Extensions provide auxiliary capabilities that are not part of data
+# processing, such as health checks and debugging UIs.
+# ═════════════════════════════════════════════════════════════════════════════
+extensions:
+
+  # ── Health Check ────────────────────────────────────────────────────────────
+  # Exposes an HTTP endpoint that returns 200 OK when the collector is ready.
+  #   GET http://localhost:13133/
+  # Docker / Kubernetes health probes, load balancers, and depends_on
+  # conditions all use endpoints like this.
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
+  # ── zPages ───────────────────────────────────────────────────────────────────
+  # A built-in debugging web UI served at http://localhost:55679/debug/
+  #
+  # Useful pages:
+  #   /debug/tracez     — sample traces currently in the pipeline
+  #   /debug/pipelinez  — live view of each pipeline (receiver / processor / exporter)
+  #   /debug/servicez   — service information and uptime
+  #   /debug/extensionz — which extensions are running
+  #
+  # This is one of the first places to look when debugging a collector problem.
+  # Open http://localhost:55679/debug/pipelinez after starting the stack.
+  zpages:
+    endpoint: "0.0.0.0:55679"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RECEIVERS
+# A receiver is an input for the collector.  It listens for telemetry from
+# applications and hands it to the configured pipelines.
+#
+# The OTLP receiver speaks the OpenTelemetry Protocol — the standard wire
+# format for all three signal types (traces, metrics, logs) over both gRPC
+# and HTTP/protobuf transports.
+#
+# frontend-api and backend-api are configured with:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+#   OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+# So they will push to the gRPC port below.  The HTTP port is available
+# as an alternative (useful if gRPC is blocked or for curl-based testing).
+# ═════════════════════════════════════════════════════════════════════════════
+receivers:
+
+  otlp:
+    protocols:
+
+      # OTLP over gRPC — the default in most SDK configurations.
+      # Applications using grpcio will connect here.
+      # Port 4317 is the official IANA-registered OTLP/gRPC port.
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+      # OTLP over HTTP/protobuf — an alternative transport.
+      # Useful when gRPC is not available (e.g. some proxies block HTTP/2).
+      # The SDK switches to this when OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf.
+      # Port 4318 is the official IANA-registered OTLP/HTTP port.
+      http:
+        endpoint: "0.0.0.0:4318"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PROCESSORS
+# Processors sit between receivers and exporters.  Each processor does one
+# focused job.  Compose them in a chain to build a complete pipeline.
+#
+# Processor naming convention:  type/instance-name
+# The /instance-name suffix lets you have multiple instances of the same
+# processor type with different configurations in the same collector.
+# Example:  attributes/spans  and  attributes/metrics  can have different rules.
+# ═════════════════════════════════════════════════════════════════════════════
+processors:
+
+  # ── 1. memory_limiter ────────────────────────────────────────────────────────
+  # PURPOSE: Protect the collector from running out of memory.
+  #
+  # The collector buffers telemetry in memory between receiver and exporter.
+  # Under a traffic spike the buffer can grow until the process OOMs and dies,
+  # taking all buffered telemetry with it.
+  #
+  # memory_limiter watches the process heap and starts refusing incoming data
+  # (backpressure) when usage approaches the limit, giving exporters time to
+  # drain the buffer.
+  #
+  # PLACEMENT: ALWAYS the first processor in every pipeline.
+  #
+  # How it works:
+  #   - Every check_interval seconds it measures heap usage.
+  #   - If heap > limit_mib, it signals receivers to stop accepting data.
+  #   - If heap > (limit_mib - spike_limit_mib), it drops data and logs a warning.
+  #   - Once usage drops below the threshold, normal operation resumes.
+  #
+  # Learning moment: Without this, a spike in traffic can OOM your collector.
+  # With it, you trade completeness (some data dropped) for stability (collector
+  # stays alive).  That tradeoff is fundamental to production observability.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400          # refuse new data above 400 MiB heap
+    spike_limit_mib: 100    # extra headroom for burst traffic
+
+
+  # ── 2. resource ──────────────────────────────────────────────────────────────
+  # PURPOSE: Normalize resource attributes across all telemetry.
+  #
+  # A "resource" in OTel is the entity that produced the telemetry —
+  # typically a service instance.  Resource attributes are key-value pairs
+  # that describe the resource (service.name, service.version, host.name…).
+  #
+  # The resource processor can INSERT, UPDATE, UPSERT, or DELETE resource
+  # attributes on every span, metric data point, or log record passing through.
+  #
+  # UPSERT = insert if missing, overwrite if already present.
+  # INSERT = only insert if the key does not exist yet.
+  # UPDATE = only update if the key already exists.
+  # DELETE = remove the attribute.
+  #
+  # Learning moment: This is the collector-side equivalent of setting
+  # OTEL_RESOURCE_ATTRIBUTES in the app.  It lets you normalize attributes
+  # centrally without touching application code — for example, enforcing that
+  # ALL services have a consistent "deployment.environment" value.
+  resource:
+    attributes:
+      # Stamp every piece of telemetry with the collector version so you know
+      # which collector processed it.  Useful when running multiple collectors.
+      - key: "collector.name"
+        value: "otel-collector-contrib"
+        action: upsert
+
+      # Ensure deployment.environment is always set.
+      # The apps set this via OTEL_RESOURCE_ATTRIBUTES but the collector
+      # enforces it as a safety net.  Use INSERT instead of UPSERT here
+      # to avoid overwriting what the app set.
+      - key: "deployment.environment"
+        value: "local"
+        action: insert
+
+
+  # ── 3. attributes/spans ──────────────────────────────────────────────────────
+  # PURPOSE: Modify span-level attributes (not resource attributes).
+  #
+  # Unlike the resource processor which touches the Resource object, the
+  # attributes processor touches individual span / metric / log attributes.
+  #
+  # The /spans suffix is an instance name.  It distinguishes this config
+  # from attributes/metrics or attributes/logs if you need different rules
+  # per signal type.  Only the pipelines that list "attributes/spans" will
+  # apply these rules.
+  #
+  # This processor removes two low-level socket attributes that are noisy
+  # in traces and rarely useful for application-level debugging.
+  # In production you would also use this to:
+  #   - redact PII (e.g. mask credit card numbers in HTTP query strings)
+  #   - normalise URL templates (e.g. /users/123 → /users/{id})
+  #   - remove high-cardinality values before they hit your metrics backend
+  #
+  # Learning moment: The difference between resource processor and attributes
+  # processor is important.  Resource attributes identify the PRODUCER.
+  # Span/metric attributes describe the OPERATION.  Grafana, Tempo, and
+  # Prometheus query them differently.
+  attributes/spans:
+    actions:
+      - key: "net.sock.peer.addr"
+        action: delete
+      - key: "net.sock.peer.port"
+        action: delete
+
+
+  # ── 4. transform/loki_labels ─────────────────────────────────────────────────
+  # PURPOSE: Set the loki.resource.labels hint so the Loki exporter knows
+  # which resource attributes to promote to Loki stream labels.
+  #
+  # In collector versions >= 0.82 the old `labels.resource` block in the
+  # loki exporter was removed.  The replacement is an attribute hint:
+  # set `loki.resource.labels` on the resource to a comma-separated list
+  # of attribute keys that should become Loki labels.
+  #
+  # PLACEMENT: logs pipeline only, before the batch processor.
+  transform/loki_labels:
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["loki.resource.labels"], "service.name, deployment.environment")
+
+
+  # ── 5. batch ─────────────────────────────────────────────────────────────────
+  # PURPOSE: Buffer telemetry and send in batches to reduce export overhead.
+  #
+  # Without batching, every span/metric/log event would trigger a separate
+  # network call to the backend.  Batching groups N items (or waits T seconds)
+  # before flushing, which dramatically reduces CPU and network overhead.
+  #
+  # PLACEMENT: ALWAYS the last processor in every pipeline, just before the
+  # exporter.  This is because batching is the "drain" step — you want all
+  # earlier processors to finish before you buffer for export.
+  #
+  # send_batch_size:     flush when this many items are ready
+  # timeout:             also flush after this time even if batch isn't full
+  # send_batch_max_size: cap each batch at this size (0 = unlimited)
+  #
+  # Learning moment: Batching is a performance vs latency tradeoff.
+  # A larger batch = less network overhead but higher latency before data
+  # appears in your backend.  A 5s timeout means spans can be up to 5s old
+  # when they arrive in Tempo.  For debugging, lower timeout = faster feedback.
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+    send_batch_max_size: 1024
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# EXPORTERS
+# An exporter is an output for the collector.  It sends processed telemetry
+# to a backend (Tempo, Prometheus, Loki, S3, a file…).
+#
+# We now have FOUR exporters across the pipelines:
+#   debug      → prints to collector stdout for terminal verification  (all signals)
+#   prometheus → exposes an HTTP scrape endpoint for Prometheus to pull from  (metrics)
+#   otlp/tempo → forwards spans to Tempo over OTLP/gRPC  (traces)
+#   loki       → pushes log records to Loki via HTTP  (logs)
+#
+# Each signal type has its own exporter.  The pipelines below wire them.
+# ═════════════════════════════════════════════════════════════════════════════
+exporters:
+
+  # ── debug ────────────────────────────────────────────────────────────────────
+  # Prints received telemetry to the collector's stdout.
+  # View it with:  docker compose logs -f otel-collector
+  #
+  # verbosity levels:
+  #   basic    — one summary line per export call (e.g. "Traces: 3 spans")
+  #   normal   — adds attribute names but not values
+  #   detailed — full JSON representation of every span / metric / log record
+  #
+  # Start with "normal" to see data is flowing without flooding the terminal.
+  # Switch to "detailed" when you want to inspect a specific span's attributes.
+  #
+  # sampling_initial:    print the first N batches in full detail on startup
+  # sampling_thereafter: after the initial burst, print every Nth batch
+  #   Set sampling_thereafter: 1  to print every single batch (verbose).
+  #   Set sampling_thereafter: 10 to print every 10th batch (quieter).
+  debug:
+    verbosity: normal
+    sampling_initial: 5
+    sampling_thereafter: 1
+
+
+  # ── prometheus ───────────────────────────────────────────────────────────────
+  # Exposes collected app metrics as a Prometheus-format HTTP scrape endpoint.
+  # Prometheus scrapes this endpoint on the interval set in prometheus.yml.
+  #
+  # HOW IT WORKS
+  # ────────────
+  # 1. Apps push OTLP metrics to the collector (push model).
+  # 2. The collector stores the latest value of each metric in an in-memory
+  #    registry managed by this exporter.
+  # 3. When Prometheus scrapes http://otel-collector:8889/metrics, the exporter
+  #    serves those stored values in Prometheus text exposition format.
+  # 4. Prometheus stores the sample in its TSDB with a timestamp.
+  #
+  # This is the protocol-translation bridge between OTel and Prometheus.
+  #
+  # CONFIGURATION OPTIONS
+  # ─────────────────────
+  # endpoint
+  #   The address where the scrape endpoint is served.
+  #   Prometheus reaches this inside the Docker network as otel-collector:8889.
+  #
+  # add_metric_suffixes: false
+  #   The prometheus exporter can add unit-based suffixes to metric names.
+  #   Example: a histogram with unit "s" normally gets "_seconds" appended.
+  #   Our Python SDK metric names already include units in the name
+  #   (e.g. "http_request_duration_seconds"), so we disable this to avoid
+  #   getting "http_request_duration_seconds_seconds_bucket".
+  #
+  # resource_to_telemetry_conversion
+  #   This is the most important setting for this learning lab.
+  #
+  #   OTel uses a Resource object to identify the service that produced
+  #   the telemetry.  Resource attributes like service.name, service.version,
+  #   and deployment.environment are NOT metric attributes — they live in a
+  #   separate object attached to the whole metric stream.
+  #
+  #   Prometheus does not have the concept of a Resource.  It only knows
+  #   about labels on individual time series.
+  #
+  #   resource_to_telemetry_conversion: {enabled: true} tells the exporter
+  #   to copy ALL resource attributes onto every metric as Prometheus labels.
+  #
+  #   Without this:
+  #     http_requests_total{http_route="/ok"} 42
+  #     — You cannot tell which service this came from!
+  #
+  #   With this:
+  #     http_requests_total{http_route="/ok", service_name="frontend-api", ...} 42
+  #     — Now you can filter by service in every PromQL query.
+  #
+  #   Note: OTel attribute names use dots (service.name), but Prometheus labels
+  #   use underscores.  The exporter converts dots to underscores automatically.
+  #   So "service.name" becomes "service_name" in Prometheus.
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    add_metric_suffixes: false
+    resource_to_telemetry_conversion:
+      enabled: true
+
+
+  # ── otlp/tempo ───────────────────────────────────────────────────────────────
+  # Forwards spans to Tempo over OTLP/gRPC.
+  #
+  # HOW IT WORKS
+  # ────────────
+  # 1. The collector receives spans from the apps on port 4317.
+  # 2. The traces pipeline processes them (memory_limiter → resource →
+  #    attributes/spans → batch).
+  # 3. This exporter sends the processed batch to Tempo's OTLP/gRPC
+  #    receiver on port 4317 inside the Docker network.
+  # 4. Tempo ingests the spans, buffers them in its WAL, and flushes
+  #    them to local block storage.
+  #
+  # WHY "otlp/tempo" AND NOT JUST "otlp"?
+  # ─────────────────────────────────────
+  # The /tempo suffix is an instance name.  It lets you have multiple OTLP
+  # exporters pointing at different backends (e.g. otlp/tempo and otlp/staging)
+  # with different endpoints or settings.  Without the suffix you can only
+  # have one OTLP exporter.  Always use instance names when there is any
+  # chance you will add a second OTLP destination later.
+  #
+  # ENDPOINT
+  # ────────
+  # tempo:4317 is the Tempo container's OTLP/gRPC receiver.
+  # "tempo" resolves via Docker's internal DNS on obs-net.
+  # Port 4317 is Tempo's internal OTLP port.  It is NOT exposed on the host
+  # (that would conflict with the collector's own exposed 4317).
+  #
+  # tls.insecure: true
+  # ──────────────────
+  # The Tempo container runs without TLS certificates (there is no CA,
+  # no cert, no key in a local Docker lab).  Setting insecure: true tells
+  # the exporter to connect over plain gRPC without TLS negotiation.
+  # In production you would configure TLS properly here.
+  #
+  # retry_on_failure
+  # ────────────────
+  # If Tempo is temporarily unavailable (restart, slow startup), the
+  # exporter will retry sending the batch rather than dropping it.
+  # This is especially important at startup when services come up in
+  # parallel — Tempo might not be ready when the first spans arrive.
+  #   initial_interval: wait 5 s before the first retry
+  #   max_interval:     cap the backoff at 30 s
+  #   max_elapsed_time: give up after 2 minutes total
+  otlp/tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 120s
+
+
+  # ── loki ────────────────────────────────────────────────────────────────────
+  # Pushes OTel log records to Loki's HTTP push API.
+  #
+  # HOW IT WORKS
+  # ────────────
+  # 1. Apps emit Python stdlib log calls (logger.info, logger.warning…).
+  # 2. The OTel LoggingHandler (added in telemetry.py) converts each stdlib
+  #    LogRecord into an OTel LogRecord and exports it via OTLP/gRPC to
+  #    the collector on port 4317.
+  # 3. The logs pipeline processes it (memory_limiter → resource → batch).
+  # 4. This exporter POSTs the batch to http://loki:3100/loki/api/v1/push
+  #    in Loki's native push API format (JSON-encoded log streams).
+  # 5. Loki ingests the log lines, indexes the labels, and stores the
+  #    compressed chunks on the loki-data Docker volume.
+  #
+  # LABEL DESIGN (v0.82+ hint-based approach)
+  # ──────────────────────────────────────────
+  # The older `labels` config block was removed in newer collector versions.
+  # Instead, set the `loki.resource.labels` attribute on log records to tell
+  # the exporter which resource attributes to promote to Loki stream labels.
+  # This is done via the transform/loki_labels processor in the logs pipeline.
+  #
+  #   "service.name"           → Loki label: service_name
+  #   "deployment.environment" → Loki label: deployment_environment
+  #
+  # Result: each service gets its own log stream:
+  #   {service_name="frontend-api", deployment_environment="local"}
+  #   {service_name="backend-api",  deployment_environment="local"}
+  #
+  # What NOT to put in labels:
+  #   trace_id, span_id, request_id, user_id  ← high cardinality, will OOM
+  #   These belong in the log LINE, not as labels.  LogQL can grep for them:
+  #     {service_name="frontend-api"} |= "trace_id=abc123"
+  #
+  # retry_on_failure
+  # ────────────────
+  # If Loki is temporarily unavailable the exporter retries the batch.
+  # Same pattern as otlp/tempo — important for parallel startup.
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 120s
+# The service block wires everything together.
+# This is the only place where extensions and pipelines are activated.
+# Components defined above (receivers, processors, exporters) do nothing
+# unless they appear in a pipeline or extension list here.
+# ═════════════════════════════════════════════════════════════════════════════
+service:
+
+  # List every extension that should be active.
+  extensions: [health_check, zpages]
+
+  # ── Telemetry for the collector itself ────────────────────────────────────────
+  # The collector also emits its own internal metrics (spans processed,
+  # export errors, queue sizes…).  These appear at http://localhost:8888/metrics
+  # in Prometheus exposition format.  When you add Prometheus in a later step
+  # you can scrape this endpoint to monitor the collector's health.
+  telemetry:
+    logs:
+      level: info           # collector's own log level: debug | info | warn | error
+    metrics:
+      level: basic          # detail level for self-metrics: none | basic | normal | detailed
+      address: "0.0.0.0:8888"
+
+
+  pipelines:
+
+    # ── Traces pipeline ────────────────────────────────────────────────────────
+    # Receives span data from the apps, enriches resource attributes,
+    # cleans span attributes, batches, then sends to Tempo.
+    #
+    # A trace is a collection of spans that represent a single request journey.
+    # In a distributed trace, spans from frontend-api and backend-api are
+    # linked by a shared trace_id and appear as a waterfall in Tempo.
+    #
+    # Exporters:
+    #   debug      → keeps printing to stdout so you can see spans in
+    #                `docker compose logs -f otel-collector`
+    #   otlp/tempo → forwards the spans to Tempo for persistent storage
+    #                and later Grafana visualisation
+    #
+    # When you add Loki later:  no change needed here (logs have their own pipeline)
+    traces:
+      receivers:   [otlp]
+      processors:  [memory_limiter, resource, attributes/spans, batch]
+      exporters:   [debug, otlp/tempo]
+
+    # ── Metrics pipeline ───────────────────────────────────────────────────────
+    # Receives counter / histogram / gauge data from the apps.
+    # Note: attributes/spans is NOT included here — it only processes spans.
+    # You would add a separate attributes/metrics processor if you needed to
+    # modify metric attributes differently from span attributes.
+    #
+    # Exporters:
+    #   debug      → keeps printing to stdout for terminal verification
+    #   prometheus → serves metrics on port 8889 for Prometheus to scrape
+    #
+    # When you add Loki later:  exporters: [debug, prometheus]
+    # (no change needed here for Loki — logs have their own pipeline)
+    metrics:
+      receivers:   [otlp]
+      processors:  [memory_limiter, resource, batch]
+      exporters:   [debug, prometheus]
+
+    # ── Logs pipeline ─────────────────────────────────────────────────────────
+    # Receives OTLP log records exported by the apps via the OTel
+    # LoggingHandler (stdlib logging bridged to OTLP in telemetry.py).
+    #
+    # Each log record carries:
+    #   - The log message and severity (INFO, WARNING, ERROR…)
+    #   - trace_id and span_id from the active OTel span context
+    #   - All resource attributes from the LoggerProvider (service.name…)
+    #
+    # Exporters:
+    #   debug → prints log records to collector stdout (terminal verification)
+    #   loki  → pushes to Loki's HTTP push API for persistent log storage
+    #
+    # When you add Grafana later:  no change needed here.
+    # Grafana queries Loki directly via its Loki data source.
+    logs:
+      receivers:   [otlp]
+      processors:  [memory_limiter, resource, transform/loki_labels, batch]
+      exporters:   [debug, loki]

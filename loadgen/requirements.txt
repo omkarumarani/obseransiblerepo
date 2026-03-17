@@ -1,0 +1,6 @@
+# loadgen/requirements.txt
+# -------------------------
+# The load generator only needs the requests library.
+# No web framework required — it is a simple script.
+
+requests==2.32.3

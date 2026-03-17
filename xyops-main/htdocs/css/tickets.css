@@ -1,0 +1,271 @@
+/* xyOps Custom Ticket Styles */
+
+/* Copyright (c) 2019 - 2026 PixlCore LLC
+Released under the BSD 3-Clause License.
+See the LICENSE.md file in this repository. */
+
+div.box.thin {
+	margin-left: 10vw;
+	margin-right: 10vw;
+}
+
+.ticket_button_container {
+	display: grid;
+	grid-template-columns: 120px auto;
+	margin: 20px 20px 0px 20px;
+}
+.ticket_button_container > div {
+	align-self: center;
+}
+.ticket_button_container > div.tbc_left {
+	justify-self: start;
+	margin-bottom: 20px;
+	white-space: nowrap;
+	
+	font-size: 14px;
+	font-weight: bold;
+	text-transform: uppercase;
+	color: var(--theme-color);
+}
+.ticket_button_container > div.tbc_right {
+	justify-self: end;
+	text-align: right;
+}
+.ticket_button_container div.button {
+	display: inline-block;
+	margin-left: 20px;
+	margin-bottom: 20px;
+}
+
+.ticket_change_divider {
+	width: 50%;
+	height: 25px;
+	margin-top: -10px;
+	margin-bottom: -10px;
+	border-right: 2px solid var(--border-color);
+}
+
+.ticket_change {
+	position: relative;
+	margin: 25px;
+	text-align: center;
+	font-size: 13px;
+	line-height: 18px;
+}
+.ticket_change p {
+	margin-bottom: 0px;
+	color: var(--label-color);
+}
+.ticket_change i.mdi:before {
+	transform: scale(1.25);
+}
+
+.box_buttons.compact {
+	padding-top: 0px; 
+	padding-right: 30px; 
+	margin-top: -20px;
+}
+@media only screen and (min-width: 240px) and (max-width: 767px) {
+	.box_buttons.compact {
+		padding-top: 0px; 
+		padding-right: 20px; 
+		margin-top: 0px;
+	}
+}
+
+.ticket_change_date {
+	position: relative;
+	margin: 0px 0px 1px 0px;
+	text-align: center;
+	font-size: 12px;
+	font-style: italic;
+	line-height: 16px;
+	color: var(--label-color);
+}
+
+.inline_image {
+	max-width: 75%;
+	cursor: zoom-in;
+	image-orientation: from-image;
+}
+
+/* Images inside comments get 100% width */
+#d_ticket_changes div.box.comment div.markdown-body img.inline_image {
+	max-width: 100%;
+}
+
+div.box_title.grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	align-items: start;
+	gap: 15px;
+}
+div.btg_title {
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+div.btg_buttons {
+	justify-self: end;
+	display: inline-flex;
+	gap: 0px;
+}
+
+div.box_title.subject {
+	/* padding-right: 120px; */
+	text-transform: none;
+	font-size: 16px;
+	color: var(--theme-color);
+}
+
+div.box_title.comment {
+	/* padding-right: 120px; */
+	text-transform: none;
+	font-size: 14px;
+	font-weight: normal;
+	padding-bottom: 10px;
+	color: var(--theme-color);
+}
+div.box_title.comment div.btg_title i.mdi:before {
+	transform: scale(1.1);
+}
+
+div.box_title div.btg_title.job_status i.mdi {
+	font-size: 125%;
+}
+
+/* div.box_admin_container {
+	position: absolute;
+	width: 90px;
+	height: auto;
+	left: 100%;
+	top: 15px;
+	margin-left: -106px;
+} */
+
+.button.favorite {
+	color: var(--pink);
+	border: 1px solid var(--pink);
+}
+.button.favorite:hover {
+	color: var(--pink-highlight);
+	border: 1px solid var(--pink-highlight);
+}
+
+/* Editor Toolbar */
+
+div.editor_toolbar {
+	position: relative;
+	height: 32px;
+	margin-bottom: 1px;
+	overflow-x: hidden;
+	overflow-y: hidden;
+	/* margin-top: -4px; */
+	white-space: nowrap;
+}
+
+button.editor_toolbar_button {
+	padding: 0;
+	margin: 0;
+	font: inherit;
+}
+
+button.editor_toolbar_button {
+	position: relative;
+	display: inline-block;
+	/* float: left; */
+	width: 28px;
+	height: 28px;
+	margin-top: 0px;
+	margin-right: 4px;
+	margin-bottom: 4px;
+	color: var(--label-color);
+	border: 1px solid var(--border-color);
+	background: var(--box-background-color);
+	border-radius: 4px;
+	cursor: pointer;
+	opacity: 0.95;
+	transition: 0.2s ease all;
+	
+	user-select: none;
+	-moz-user-select: none;
+	-webkit-user-select: none;
+	
+	font-size: 18px;
+	line-height: 27px;
+	text-align: center;
+}
+button.editor_toolbar_button:hover {
+	/* top: -1px; */
+	color: var(--theme-color);
+	border: 1px solid var(--theme-color-half);
+	box-shadow: 0px 2px 1px var(--shadow-color);
+	opacity: 1.0;
+}
+button.editor_toolbar_button:active {
+	color: var(--body-text-color);
+}
+button.editor_toolbar_button.selected {
+	color: white;
+	background: var(--theme-color);
+	border: 1px solid var(--theme-color-half);
+	box-shadow: 0px 2px 1px var(--shadow-color);
+	opacity: 1.0;
+}
+
+div.editor_toolbar_divider {
+	/* float: left; */
+	position: relative;
+	display: inline-block;
+	width: 2px;
+	top: 4px;
+	height: 20px;
+	margin-right: 8px;
+	margin-left: 4px;
+	background-color: var(--border-color);
+}
+
+div.editor_toolbar_help {
+	position: relative;
+	display: inline-block;
+	top: -2px;
+	height: 28px;
+	line-height: 27px;
+	margin-left: 10px;
+	font-size: 12px;
+	
+	margin-bottom: 4px;
+	border: 1px solid transparent;
+}
+div.editor_toolbar_help a {
+	color: var(--icon-color);
+}
+div.editor_toolbar_help a:hover {
+	color: var(--theme-color);
+}
+div.editor_toolbar_help a i {
+	padding-left: 2px;
+	color: var(--icon-color);
+}
+div.editor_toolbar_help a:hover i {
+	color: var(--theme-color);
+}
+
+div.message_body {
+	/* white-space: pre-wrap; */
+	margin-left: 40px;
+	margin-right: 40px;
+	margin-bottom: 20px;
+	font-size: 14px;
+	line-height: 18px;
+	/* overflow: hidden; */
+}
+
+div.message_body pre {
+	margin-top: 0;
+}
+
+div.message_body pre code.hljs {
+	padding: 0;
+}

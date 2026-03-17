@@ -1,0 +1,43 @@
+# backend-api/requirements.txt
+# ----------------------------
+# Pinned to exact versions for reproducibility.
+# Upgrade intentionally when you know what changed.
+#
+# Package rationale
+# ~~~~~~~~~~~~~~~~~
+# fastapi / uvicorn           — web framework and ASGI server (unchanged)
+#
+# opentelemetry-sdk           — core SDK: TracerProvider, MeterProvider,
+#                               Resource, BatchSpanProcessor, etc.
+#
+# opentelemetry-instrumentation-fastapi
+#                             — auto-instruments every FastAPI request:
+#                               creates a SERVER span, fills in
+#                               http.method / http.route / http.status_code.
+#                               No code changes needed per route.
+#
+# opentelemetry-exporter-otlp-proto-grpc
+#                             — sends spans/metrics to an OTel Collector
+#                               (or Tempo / Prometheus) over gRPC (default).
+#
+# opentelemetry-exporter-otlp-proto-http
+#                             — alternative HTTP/protobuf exporter.
+#                               Useful if gRPC is blocked in your network.
+#
+# grpcio                      — gRPC runtime required by the gRPC exporter.
+
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# ── OpenTelemetry core ─────────────────────────────────────────────────────
+opentelemetry-sdk>=1.28.0,<2.0.0
+
+# ── Auto-instrumentation ───────────────────────────────────────────────────
+opentelemetry-instrumentation-fastapi>=0.49b0
+
+# ── OTLP exporters ─────────────────────────────────────────────────────────
+opentelemetry-exporter-otlp-proto-grpc>=1.28.0,<2.0.0
+opentelemetry-exporter-otlp-proto-http>=1.28.0,<2.0.0
+
+# ── gRPC runtime (required by grpc exporter) ──────────────────────────────
+grpcio>=1.60.0

@@ -1,0 +1,206 @@
+# grafana/provisioning/datasources/datasources.yaml
+# --------------------------------------------------
+# Grafana datasource provisioning file.
+#
+# Grafana reads this file at startup and creates (or updates) the listed
+# datasources automatically.  You never have to click through the UI to
+# add a datasource — everything is version-controlled here.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW GRAFANA PROVISIONING WORKS
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Grafana supports provisioning for:
+#   datasources/   ← this file — connection settings for backends
+#   dashboards/    ← where to find dashboard JSON files on disk
+#   alerting/      ← alert rules and notification policies (not used here)
+#
+# The container mounts ./grafana/provisioning into /etc/grafana/provisioning.
+# On startup Grafana scans that directory and applies every .yaml file it finds.
+# Changes take effect on restart:  docker compose restart grafana
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CROSS-LINKING ARCHITECTURE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Grafana links the three backends using the trace_id as a shared key:
+#
+#   Prometheus metric panel
+#       │  exemplar on a data point carries trace_id
+#       │  "View in Tempo" button → opens Tempo trace viewer
+#       ▼
+#   Tempo trace viewer
+#       │  each span can show linked log lines
+#       │  "View in Loki" derived field link → LogQL query by trace_id
+#       ▼
+#   Loki log viewer
+#       │  trace_id in log line (or as structured attribute)
+#       │  "View in Tempo" derived field link → opens the trace
+#       ▼
+#   Tempo trace viewer  (full circle)
+#
+# The mechanism that makes cross-linking work is called "derived fields"
+# on Loki and "trace to logs" / "trace to metrics" on Tempo.
+# These are configured in the datasource definitions below.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: 1
+
+datasources:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # PROMETHEUS
+  #
+  # Grafana queries Prometheus for metrics panels using PromQL.
+  #
+  # exemplarTraceIdDestinations
+  # ───────────────────────────
+  # Prometheus can store "exemplars" alongside metric samples.  An exemplar
+  # is a sample annotated with extra metadata — most importantly a trace_id.
+  # When the OTel SDK records a request, it can attach the active trace_id to
+  # the histogram bucket that records that request's latency.
+  #
+  # With exemplarTraceIdDestinations configured, Grafana renders exemplars as
+  # dots on histogram/rate panels.  Clicking a dot opens the linked trace in
+  # Tempo.  This is the "metrics → traces" jump.
+  #
+  # datasourceUid: tempo
+  #   Tells Grafana which datasource to open when a trace_id is clicked.
+  #   Must match the uid field on the Tempo datasource below.
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    url: http://prometheus:9090
+    access: proxy
+    isDefault: false
+    jsonData:
+      timeInterval: "15s"          # matches OTEL_METRIC_EXPORT_INTERVAL_MS
+      exemplarTraceIdDestinations:
+        - name: trace_id           # label name on the exemplar in Prometheus
+          datasourceUid: tempo     # which datasource to open when clicked
+
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # TEMPO
+  #
+  # Grafana queries Tempo for distributed traces using TraceQL or trace_id.
+  #
+  # tracesToLogsV2
+  # ──────────────
+  # When you open a trace in Tempo, Grafana can automatically show the log
+  # lines that were emitted during that trace.  It constructs a Loki LogQL
+  # query using labels and tag values from the selected span.
+  #
+  # datasourceUid: loki
+  #   Which datasource to open for the linked logs.
+  #
+  # tags
+  #   OTel resource attributes that were promoted to Loki stream labels.
+  #   Grafana uses these to build the LogQL label filter.
+  #   "service.name" on the span → service_name label in Loki stream.
+  #
+  # filterByTraceID: true
+  #   Adds |= "<trace_id>" to the LogQL query so only log lines from that
+  #   trace are shown (not all logs from that service).
+  #
+  # filterBySpanID: false
+  #   Leaving this false shows all log lines for the trace, not just the
+  #   selected span.  More useful when debugging — you see the full context.
+  #
+  # tracesToMetrics
+  # ───────────────
+  # From a span in Tempo you can jump to a Prometheus metric panel that
+  # shows the rate of that same operation.  Grafana constructs a PromQL
+  # query using span attributes as metric label filters.
+  #
+  # serviceMapEnabled: true
+  # ───────────────────────
+  # Tempo can generate a service dependency graph (which service called which
+  # and with what error rate / latency).  In our project this requires the
+  # Tempo metrics generator to be enabled (it is currently disabled to keep
+  # the setup simple).  Setting this to false avoids Grafana showing an
+  # empty service map panel.  Enable both when you turn on the metrics generator.
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    access: proxy
+    isDefault: true
+    jsonData:
+      httpMethod: GET
+      serviceMap:
+        datasourceUid: prometheus
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-1m"
+        spanEndTimeShift: "1m"
+        tags:
+          - key: "service.name"
+            value: "service_name"
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: false
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: "-2m"
+        spanEndTimeShift: "2m"
+        tags:
+          - key: "service.name"
+            value: "service_name"
+        queries:
+          - name: "Request rate"
+            query: "rate(http_requests_total{service_name=\"$__tags.service_name\"}[1m])"
+          - name: "Error rate"
+            query: "rate(http_errors_total{service_name=\"$__tags.service_name\"}[1m])"
+          - name: "p95 latency"
+            query: "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service_name=\"$__tags.service_name\"}[5m]))"
+      nodeGraph:
+        enabled: false
+
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # LOKI
+  #
+  # Grafana queries Loki for log panels using LogQL.
+  #
+  # derivedFields
+  # ─────────────
+  # Derived fields extract a value from a log line using a regex and can
+  # create a clickable link from that value.  This is the "logs → traces" jump.
+  #
+  # How it works:
+  #   1. Grafana receives a log line:
+  #        "... trace_id=abc123def456... span_id=1234567890abcdef ..."
+  #   2. The regex "trace_id=([a-f0-9]{32})" captures the 32-hex trace_id.
+  #   3. Grafana renders a "View in Tempo" button next to the log line.
+  #   4. Clicking it opens Tempo with that trace_id pre-filled.
+  #
+  # matcherRegex
+  #   PCRE regex applied to the full log line.  The first capture group
+  #   is the extracted value (the trace_id).
+  #
+  # url / datasourceUid
+  #   Two ways to link: external URL template or internal datasource link.
+  #   We use datasourceUid so the link opens inside Grafana's Tempo viewer
+  #   rather than navigating away.
+  #
+  # urlDisplayLabel
+  #   The text shown on the button in the Logs panel.
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://loki:3100
+    access: proxy
+    isDefault: false
+    jsonData:
+      derivedFields:
+        - name: "TraceID"
+          matcherType: "label"
+          matcherRegex: "trace_id"
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: "View Trace in Tempo"

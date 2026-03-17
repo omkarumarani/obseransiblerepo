@@ -1,0 +1,112 @@
+{
+	"type": "xypdf",
+	"description": "xyOps Portable Data Object",
+	"version": "1.0",
+	"items": [
+		{
+			"type": "event",
+			"data": {
+				"id": "emjaw5bw2trgrbc7",
+				"title": "Split Input Test",
+				"enabled": true,
+				"targets": [],
+				"params": {},
+				"fields": [],
+				"triggers": [
+					{
+						"enabled": true,
+						"type": "manual",
+						"id": "nq4e7edp"
+					}
+				],
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"notes": "",
+				"workflow": {
+					"nodes": [
+						{
+							"id": "nq4e7edp",
+							"type": "trigger",
+							"x": -84,
+							"y": 258
+						},
+						{
+							"id": "nan42bp0",
+							"type": "job",
+							"data": {
+								"params": {
+									"duration": "1",
+									"action": "Success",
+									"custom": "",
+									"burn": false,
+									"network": false,
+									"upload": false
+								},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "Splitoon",
+								"category": "general",
+								"plugin": "testplug",
+								"icon": "",
+								"tags": []
+							},
+							"x": 356,
+							"y": 104
+						},
+						{
+							"id": "n597e98v",
+							"type": "controller",
+							"data": {
+								"controller": "split",
+								"split": "data.list",
+								"continue": 100
+							},
+							"x": 106,
+							"y": 302
+						}
+					],
+					"connections": [
+						{
+							"id": "cu678bsc",
+							"source": "nq4e7edp",
+							"dest": "n597e98v"
+						},
+						{
+							"id": "cpt8ap7l",
+							"source": "n597e98v",
+							"dest": "nan42bp0"
+						}
+					]
+				},
+				"category": "general",
+				"type": "workflow",
+				"icon": "",
+				"tags": [],
+				"plugin": "_workflow",
+				"username": "admin",
+				"modified": 1766029185.033,
+				"created": 1766029132,
+				"revision": 2
+			}
+		}
+	]
+}

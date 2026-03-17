@@ -1,0 +1,18 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: {{config.client.name}} Alert Cleared: {{nice_server}}: {{def.title}} -->
+<!-- Title: Alert Cleared -->
+<!-- Button: View Alert | {{links.alert_url}} -->
+
+The following {{config.client.name}} alert has been cleared: **{{def.title}}**
+
+- **Server:** {{nice_server}}
+- **Hostname:** {{params.hostname}}
+- **IP Address:** {{nice_ip}}
+- **Groups:** {{nice_groups}}
+- **Date/Time:** {{date_time}}
+- **Expression:** `{{def.expression}}`
+- **Elapsed:** {{nice_elapsed}}
+
+### Links:
+- [Alert Detail View]({{links.alert_url}})
+- [Live Server View]({{links.server_url}})

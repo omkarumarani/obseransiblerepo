@@ -1,0 +1,881 @@
+{	
+	"storage": [
+		[ "put", "users/admin", {
+			"username": "admin",
+			"password": "$2a$10$VAF.FNvz1JqhCAB5rCh9GOa965eYWH3fcgWIuQFAmsZnnVS/.ye1y",
+			"force_password_change": true,
+			"full_name": "Administrator",
+			"email": "admin@localhost",
+			"active": 1,
+			"modified": 1434125333,
+			"created": 1434125333,
+			"salt": "salty",
+			"language": "",
+			"region": "",
+			"num_format": "",
+			"hour_cycle": "h12",
+			"timezone": "",
+			"color_acc": false,
+			"privacy_mode": false,
+			"notifications": false,
+			"effects": true,
+			"page_info": true,
+			"contrast": "auto",
+			"motion": "auto",
+			"volume": 7,
+			"filters": {
+				"brightness": 100,
+				"contrast": 100,
+				"hue": 0,
+				"saturation": 100,
+				"sepia": 0,
+				"grayscale": 0
+			},
+			"privileges": {
+				"admin": true
+			},
+			"roles": [],
+			"searches": [
+				{
+					"name": "All Completed",
+					"uri": "Search",
+					"icon": "cloud-search-outline"
+				},
+				{
+					"name": "Successes",
+					"uri": "Search?result=success",
+					"icon": "check-circle-outline"
+				},
+				{
+					"name": "Errors",
+					"uri": "Search?result=error",
+					"icon": "alert-decagram-outline"
+				},
+				{
+					"name": "Warnings",
+					"uri": "Search?result=warning",
+					"icon": "alert-outline"
+				},
+				{
+					"name": "Criticals",
+					"uri": "Search?result=critical",
+					"icon": "fire-alert"
+				},
+				{
+					"name": "All Tickets",
+					"uri": "Tickets",
+					"icon": "text-box-multiple-outline"
+				},
+				{
+					"name": "Open Tickets",
+					"uri": "Tickets?status=open",
+					"icon": "label-variant-outline"
+				},
+				{
+					"name": "Overdue Tickets",
+					"uri": "Tickets?status=open&query=due%3A%3Ctoday",
+					"icon": "calendar-alert"
+				},
+				{
+					"name": "My InBox",
+					"uri": "Tickets?status=open&assignee=self",
+					"icon": "email-variant"
+				},
+				{
+					"name": "My Drafts",
+					"uri": "Tickets?status=draft&username=self",
+					"icon": "dots-horizontal"
+				}
+			]
+		} ],
+		[ "listCreate", "global/users", { "page_size": 1000 } ],
+		[ "listPush", "global/users", { "username": "admin" } ],
+		[ "listCreate", "global/api_keys", { "page_size": 100 } ],
+		
+		[ "listCreate", "global/roles", {} ],
+		[ "listPush", "global/roles", {
+			"id": "all",
+			"title": "All Users",
+			"enabled": true,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333,
+			"notes": "A base set of privileges for all users to enjoy.",
+			"icon": "",
+			"categories": [],
+			"groups": [],
+			"privileges": {
+				"create_events": true,
+				"edit_events": true,
+				"run_jobs": true,
+				"tag_jobs": true
+			}
+		} ],
+		
+		[ "listCreate", "global/groups", { "page_size": 100 } ],
+		[ "listPush", "global/groups", {
+			"id": "main",
+			"title": "Main Group",
+			"hostname_match": ".+",
+			"alert_actions": [],
+			"sort_order": 0,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		
+		[ "listCreate", "global/plugins", {} ],
+		[ "listPush", "global/plugins", {
+			"id": "testplug",
+			"title": "Test Plugin",
+			"enabled": 1,
+			"stock": true,
+			"command": "[test-plugin]",
+			"username": "admin",
+			"type": "event",
+			"kill": "parent",
+			"icon": "test-tube",
+			"notes": "The Test Plugin exists mainly to test xyOps, but it can also be useful for testing pieces of workflows.  It outputs sample data and optionally a sample file, which are passed to downstream events, if connected.  It can also simulate various job outcomes (success, fail, etc.).",
+			"modified": 1434125333,
+			"created": 1434125333,
+			"params": [
+				{ "id":"duration", "type":"text", "variant":"number", "title":"Test Duration (seconds)", "value": 60, "required": true },
+				{ "id":"action", "type":"select", "title":"Simulate Result", "value": "Success, Error, Warning, Critical, Crash" },
+				{ "id":"custom", "type":"text", "title":"Custom Value", "value":"" },
+				{ "id":"burn", "type":"checkbox", "title":"Burn Memory/CPU", "value": false },
+				{ "id":"network", "type":"checkbox", "title":"Generate Network Traffic", "value": false },
+				{ "id":"upload", "type":"checkbox", "title":"Upload Sample File", "value": false }
+			]
+		} ],
+		[ "listPush", "global/plugins", {
+			"id": "shellplug",
+			"title": "Shell Script",
+			"enabled": 1,
+			"stock": true,
+			"command": "[shell-plugin]",
+			"username": "admin",
+			"type": "event",
+			"kill": "all",
+			"icon": "console",
+			"notes": "The Shell Plugin allows you to execute arbitrary shell scripts (or any language that supports a Shebang).  Simply select the Shell Plugin when creating an event or workflow, and enter your script.  This is an easy way to get up and running quickly, because you don't have to worry about reading or writing JSON.",
+			"modified": 1434125333,
+			"created": 1434125333,
+			"params": [
+				{ "id":"script", "type":"code", "title":"Script Source", "value": "#!/bin/sh\n\n# Enter your shell script code here", "locked": true, "required": true },
+				{ "id":"annotate", "type":"checkbox", "title":"Add Date/Time Stamps to Log", "value": false },
+				{ "id":"pass", "type":"checkbox", "title":"Data Passthrough", "value": false }
+			]
+		} ],
+		[ "listPush", "global/plugins", {
+			"id": "httpplug",
+			"title": "HTTP Request",
+			"enabled": 1,
+			"stock": true,
+			"command": "[http-plugin]",
+			"username": "admin",
+			"type": "event",
+			"kill": "parent",
+			"icon": "wan",
+			"notes": "The HTTP Request Plugin allows you to send simple GET, HEAD or POST requests to any URL, and log the response.  You can specify custom HTTP request headers, and also supply regular expressions to match a successful response based on the content.",
+			"modified": 1434125333,
+			"created": 1434125333,
+			"params": [
+				{ "type":"select", "id":"method", "title":"Method", "value":"GET, HEAD, POST, PUT, DELETE" }, 
+				{ "type":"text", "id":"url", "title":"URL", "value":"https://", "required": true }, 
+				{ "type":"textarea", "id":"headers", "title":"Request Headers", "value":"User-Agent: xyOps/HTTP-Plugin" }, 
+				{ "type":"textarea", "id":"data", "title":"POST Data", "value":"" }, 
+				{ "type":"text", "id":"timeout", "title":"Timeout (Seconds)", "value":"30" }, 
+				{ "type":"text", "id":"success_match", "title":"Success Match", "value":"" }, 
+				{ "type":"text", "id":"error_match", "title":"Error Match", "value":"" },
+				{ "type":"checkbox", "id":"follow", "title":"Follow Redirects", "value":false }, 
+				{ "type":"checkbox", "id":"download", "title":"Download File", "value":false }, 
+				{ "type":"checkbox", "id":"ssl_cert_bypass", "title":"SSL Cert Bypass", "value":false }
+			]
+		} ],
+		[ "listPush", "global/plugins", {
+			"id": "dockerplug",
+			"title": "Docker Run",
+			"enabled": true,
+			"stock": true,
+			"type": "event",
+			"command": "[docker-plugin]",
+			"params": [
+				{
+					"id": "image_name",
+					"title": "Image Name",
+					"type": "text",
+					"caption": "Enter the name of the Docker image to use, which can be local or remote.",
+					"locked": false,
+					"value": "ghcr.io/pixlcore/xyops-shell-image",
+					"variant": "text",
+					"required": true
+				},
+				{
+					"id": "image_ver",
+					"title": "Image Version",
+					"type": "text",
+					"caption": "Enter the desired version of the image to use, or use \"latest\" for the latest version.",
+					"locked": false,
+					"value": "latest",
+					"variant": "text",
+					"required": true
+				},
+				{
+					"id": "cont_name",
+					"title": "Container Name",
+					"type": "text",
+					"caption": "Enter the desired name of the Docker container, which can contain placeholder macros from the job data.",
+					"locked": false,
+					"value": "xyops-job-{{id}}",
+					"variant": "text",
+					"required": true
+				},
+				{
+					"id": "cont_cpus",
+					"title": "Max CPUs",
+					"type": "text",
+					"caption": "Set the maximum number of CPU cores the container is allowed to use, or 0 for unlimited.",
+					"locked": false,
+					"value": 1,
+					"variant": "number",
+					"required": false
+				},
+				{
+					"id": "cont_mem",
+					"title": "Max Memory",
+					"type": "text",
+					"caption": "Enter the maximum amount of memory to allow the container to use, or leave blank for unlimited.",
+					"locked": false,
+					"value": "1 GB",
+					"variant": "text",
+					"required": false
+				},
+				{
+					"id": "cont_net",
+					"title": "Join Network",
+					"type": "text",
+					"caption": "Optionally specify a Docker network name for the container to join.",
+					"locked": false,
+					"value": "",
+					"variant": "text",
+					"required": false
+				},
+				{
+					"id": "cont_extras",
+					"title": "Command Extras",
+					"type": "text",
+					"caption": "Optionally add any extra command-line arguments to pass to `docker run` (for e.g. volume mounts).",
+					"locked": false,
+					"value": "",
+					"variant": "text",
+					"required": false
+				},
+				{
+					"id": "cont_cmd",
+					"title": "Launch Command",
+					"type": "text",
+					"caption": "Enter the initial command to run as the container starts.  It is recommended to use [xyrun](https://github.com/pixlcore/xyrun) for this, so resources are monitored, and files are managed properly.\n",
+					"locked": false,
+					"value": "xyrun",
+					"variant": "text",
+					"required": false
+				},
+				{
+					"id": "run_mode",
+					"title": "Run Mode",
+					"type": "select",
+					"caption": "Choose whether you want the entire job JSON data to be sent to STDIN, or only the script source (advanced).",
+					"locked": false,
+					"value": "Send Job JSON, Send Script Source"
+				},
+				{
+					"id": "script",
+					"title": "Script Source",
+					"type": "code",
+					"caption": "Enter the code to run inside the container.  You can use any language that supports a shebang line.",
+					"locked": true,
+					"value": "#!/bin/sh\n\n# Enter your shell script code here",
+					"required": true
+				},
+				{
+					"id": "cont_init",
+					"title": "Init process manager",
+					"type": "checkbox",
+					"caption": "Run an \"init\" inside the container that forwards signals and reaps processes.",
+					"locked": false,
+					"value": true
+				},
+				{
+					"id": "cont_rm",
+					"title": "Ephemeral Container",
+					"type": "checkbox",
+					"caption": "Automatically delete the container after the job completes (recommended).",
+					"locked": false,
+					"value": true
+				},
+				{
+					"id": "verbose",
+					"title": "Verbose Logging",
+					"type": "checkbox",
+					"caption": "Enable verbose debug logging (raw docker command, etc.).",
+					"locked": false,
+					"value": false
+				}
+			],
+			"kill": "parent",
+			"runner": true,
+			"notes": "Use this Plugin to run custom scripts inside a Docker container.",
+			"icon": "docker",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/plugins", {
+			"id": "open_files",
+			"title": "Count Open Files",
+			"command": "/bin/sh",
+			"script": "cat /proc/sys/fs/file-nr",
+			"groups": [],
+			"enabled": true,
+			"format": "text",
+			"notes": "This is for Linux only.",
+			"username": "admin",
+			"type": "monitor",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		
+		[ "listCreate", "global/categories", {} ],
+		[ "listPush", "global/categories", {
+			"id": "general",
+			"title": "General",
+			"enabled": true,
+			"sort_order": 0,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333,
+			"notes": "For events that don't fit anywhere else.",
+			"color": "plain",
+			"icon": "",
+			"limits": [],
+			"actions": []
+		} ],
+		
+		[ "listCreate", "global/channels", {} ],
+		[ "listPush", "global/channels", {
+			"id": "sev1",
+			"title": "Severity 1",
+			"enabled": true,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333,
+			"notes": "For major events that require everyone's attention right away.",
+			"users": ["admin"],
+			"email": "",
+			"web_hook": "",
+			"run_event": "",
+			"sound": "attention-3.mp3",
+			"icon": "",
+			"shell_exec": ""
+		} ],
+		
+		[ "listCreate", "global/web_hooks", {} ],
+		[ "listPush", "global/web_hooks", {
+			"id": "example_hook",
+			"title": "Example Hook",
+			"enabled": true,
+			"url": "https://httpbin.org/post",
+			"method": "POST",
+			"headers": [
+				{ "name": "Content-Type", "value": "application/json" },
+				{ "name": "User-Agent", "value": "xyOps/WebHook" }
+			],
+			"body": "{\n\t\"text\": \"{{text}}\",\n\t\"content\": \"{{text}}\",\n\t\"message\": \"{{text}}\"\n}",
+			"timeout": 30,
+			"retries": 0,
+			"follow": false,
+			"ssl_cert_bypass": false,
+			"notes": "An example web hook for demonstration purposes.",
+			"icon": "",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		
+		[ "listCreate", "global/events", {} ],
+		
+		[ "listCreate", "global/tags", { "page_size": 100 } ],
+		[ "listPush", "global/tags", { 
+			"id": "important", 
+			"title": "Important", 
+			"icon": "alert-rhombus", 
+			"username": "admin", 
+			"modified": 1611173740, 
+			"created": 1611173740 
+		} ],
+		[ "listPush", "global/tags", { 
+			"id": "flag", 
+			"title": "Flag", 
+			"icon": "flag-checkered", 
+			"username": "admin", 
+			"modified": 1611173740, 
+			"created": 1611173740 
+		} ],
+		
+		[ "listCreate", "global/monitors", { "page_size": 100 } ],
+		[ "listPush", "global/monitors", {
+			"id": "load_avg",
+			"title": "CPU Load Average",
+			"source": "load[0]",
+			"data_type": "float",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1.0,
+			"sort_order": 0,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "cpu_usage",
+			"title": "CPU Usage %",
+			"source": "cpu.currentLoad",
+			"data_type": "float",
+			"suffix": "%",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 100,
+			"sort_order": 1,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "mem_used",
+			"title": "Memory in Use",
+			"source": "memory.used",
+			"data_type": "bytes",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1024,
+			"sort_order": 2,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "mem_free",
+			"title": "Available Memory",
+			"source": "memory.available",
+			"data_type": "bytes",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1024,
+			"sort_order": 3,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "net_conns",
+			"title": "Network Connections",
+			"source": "stats.network.conns",
+			"data_type": "integer",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 10,
+			"sort_order": 4,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "disk_usage_root",
+			"title": "Disk Usage % (Root)",
+			"source": "mounts.root.use",
+			"data_type": "float",
+			"suffix": "%",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 100,
+			"sort_order": 5,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "disk_read_sec",
+			"title": "Disk Read (Bytes)",
+			"source": "stats.fs.rx",
+			"delta": true,
+			"delta_min_value": 0,
+			"divide_by_delta": true,
+			"data_type": "bytes",
+			"suffix": "/sec",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1024,
+			"sort_order": 6,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "disk_write_sec",
+			"title": "Disk Write (Bytes)",
+			"source": "stats.fs.wx",
+			"delta": true,
+			"delta_min_value": 0,
+			"divide_by_delta": true,
+			"data_type": "bytes",
+			"suffix": "/sec",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1024,
+			"sort_order": 7,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "disk_iops_sec",
+			"title": "Disk I/O Operations",
+			"source": "stats.io.tIO",
+			"delta": true,
+			"delta_min_value": 0,
+			"divide_by_delta": true,
+			"data_type": "integer",
+			"suffix": "/sec",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 100,
+			"sort_order": 8,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "io_wait",
+			"title": "CPU I/O Wait %",
+			"source": "cpu.totals.iowait",
+			"data_type": "float",
+			"suffix": "%",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 100,
+			"sort_order": 9,
+			"notes": "This is for Linux only.",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "open_files",
+			"title": "Open Files",
+			"source": "commands.open_files",
+			"data_type": "integer",
+			"data_match": "(\\d+)",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 10,
+			"sort_order": 10,
+			"notes": "This is for Linux only.",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "os_bytes_in_sec",
+			"title": "Network In (Bytes)",
+			"source": "stats.network.rx_bytes",
+			"delta": true,
+			"delta_min_value": 0,
+			"divide_by_delta": true,
+			"data_type": "bytes",
+			"suffix": "/sec",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1024,
+			"sort_order": 11,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "os_bytes_out_sec",
+			"title": "Network Out (Bytes)",
+			"source": "stats.network.tx_bytes",
+			"delta": true,
+			"delta_min_value": 0,
+			"divide_by_delta": true,
+			"data_type": "bytes",
+			"suffix": "/sec",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 1024,
+			"sort_order": 12,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "total_procs",
+			"title": "Total Processes",
+			"source": "processes.all",
+			"data_type": "integer",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 10,
+			"sort_order": 13,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/monitors", {
+			"id": "active_jobs",
+			"title": "Active Jobs",
+			"source": "jobs",
+			"data_type": "integer",
+			"suffix": "",
+			"groups": [],
+			"display": true,
+			"min_vert_scale": 10,
+			"sort_order": 14,
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		
+		[ "listCreate", "global/alerts", { "page_size": 100 } ],
+		[ "listPush", "global/alerts", {
+			"id": "load_avg_high",
+			"title": "High CPU Load",
+			"expression": "monitors.load_avg >= (cpu.cores + 1)",
+			"message": "CPU load average is too high: {{float(monitors.load_avg)}} ({{cpu.cores}} CPU cores)",
+			"groups": [],
+			"actions": [],
+			"monitor_id": "load_avg",
+			"enabled": true,
+			"samples": 1,
+			"notes": "",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/alerts", {
+			"id": "mem_free_low",
+			"title": "Low Memory",
+			"expression": "memory.available < (memory.total * 0.05)",
+			"message": "Less than 5% of total memory is available ({{bytes(memory.available)}} of {{bytes(memory.total)}})",
+			"groups": [],
+			"actions": [],
+			"monitor_id": "mem_free",
+			"enabled": true,
+			"samples": 1,
+			"notes": "",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/alerts", {
+			"id": "io_wait_high",
+			"title": "High I/O Wait",
+			"expression": "monitors.io_wait >= 75",
+			"message": "Disk I/O wait is too high: {{pct(monitors.io_wait)}}",
+			"groups": [],
+			"actions": [],
+			"monitor_id": "io_wait",
+			"enabled": true,
+			"samples": 1,
+			"notes": "",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/alerts", {
+			"id": "disk_usage_root_high",
+			"title": "Disk Full",
+			"expression": "monitors.disk_usage_root >= 90",
+			"message": "Root filesystem is {{pct(monitors.disk_usage_root)}} full.",
+			"groups": [],
+			"actions": [],
+			"monitor_id": "disk_usage_root",
+			"enabled": true,
+			"samples": 1,
+			"notes": "",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		[ "listPush", "global/alerts", {
+			"id": "active_jobs_high",
+			"title": "High Active Jobs",
+			"expression": "monitors.active_jobs >= 50",
+			"message": "Active job count is too high: {{number(monitors.active_jobs)}}",
+			"groups": [],
+			"actions": [],
+			"monitor_id": "active_jobs",
+			"enabled": true,
+			"samples": 1,
+			"limit_jobs": true,
+			"abort_jobs": false,
+			"notes": "",
+			"username": "admin",
+			"modified": 1434125333,
+			"created": 1434125333
+		} ],
+		
+		[ "listCreate", "global/buckets", {} ],
+		[ "listCreate", "global/secrets", {} ],
+		[ "listCreate", "global/stats", {} ],
+		
+		[ "put", "global/state", {
+			"scheduler": { "enabled": true }
+		} ]
+	],
+	
+	"activity_map": {
+		"global/groups": {
+			"action": "group_create",
+			"key": "group"
+		},
+		"global/plugins": {
+			"action": "plugin_create",
+			"key": "plugin"
+		},
+		"global/categories": {
+			"action": "category_create",
+			"key": "category"
+		},
+		"global/channels": {
+			"action": "channel_create",
+			"key": "channel"
+		},
+		"global/web_hooks": {
+			"action": "web_hook_create",
+			"key": "web_hook"
+		},
+		"global/tags": {
+			"action": "tag_create",
+			"key": "tag"
+		},
+		"global/monitors": {
+			"action": "monitor_create",
+			"key": "monitor"
+		},
+		"global/alerts": {
+			"action": "alert_create",
+			"key": "alert"
+		}
+	},
+	
+	"build": {
+		"common": [
+			[ "symlinkFile", "node_modules/codemirror", "htdocs/codemirror" ],
+			[ "symlinkFile", "node_modules/@highlightjs/cdn-assets", "htdocs/highlight" ],
+			
+			[ "symlinkCompress", "node_modules/@highlightjs/cdn-assets/styles/atom-one-light.css", "htdocs/css/" ],
+			[ "symlinkCompress", "node_modules/@highlightjs/cdn-assets/styles/atom-one-dark.css", "htdocs/css/" ],
+			
+			[ "symlinkCompress", "node_modules/jquery/dist/jquery.min.js", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/jquery/dist/jquery.min.map", "htdocs/js/external/" ],
+			
+			[ "symlinkCompress", "node_modules/pixl-chart/chart.min.js", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/zeroupload/zeroupload.min.js", "htdocs/js/external/" ],
+			
+			[ "symlinkCompress", "node_modules/@mdi/font/css/materialdesignicons.min.css", "htdocs/css/" ],
+			[ "symlinkCompress", "node_modules/@mdi/font/css/materialdesignicons.min.css.map", "htdocs/css/" ],
+			[ "symlinkCompress", "node_modules/@mdi/font/css/materialdesignicons.css.map", "htdocs/css/" ],
+			[ "copyFiles", "node_modules/@mdi/font/fonts/*", "htdocs/fonts/" ],
+			
+			[ "symlinkCompress", "node_modules/diff/dist/diff.js", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/marked/marked.min.js", "htdocs/js/external/" ],
+			
+			[ "symlinkCompress", "node_modules/ansi_up/ansi_up.js", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/ansi_up/ansi_up.js.map", "htdocs/js/external/" ],
+			
+			[ "symlinkCompress", "node_modules/@xterm/xterm/lib/xterm.js", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/@xterm/xterm/lib/xterm.js.map", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/@xterm/addon-fit/lib/addon-fit.js", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/@xterm/addon-fit/lib/addon-fit.js.map", "htdocs/js/external/" ],
+			[ "symlinkCompress", "node_modules/@xterm/xterm/css/xterm.css", "htdocs/css/" ],
+			
+			[ "symlinkCompress", "node_modules/canvas-confetti/dist/confetti.browser.js", "htdocs/js/external/" ],
+			
+			[ "symlinkFile", "node_modules/pixl-xyapp/js", "htdocs/js/common" ],
+			[ "symlinkFile", "node_modules/pixl-xyapp/css/normalize.css", "htdocs/css/" ],
+			[ "symlinkFile", "node_modules/pixl-xyapp/css/base.css", "htdocs/css/" ],
+			
+			[ "chmodFiles", "755", "bin/*" ],
+			
+			[ "prepIconFont", "htdocs/js/external/icon-font-names.js" ],
+			[ "compressFile", "htdocs/js/external/icon-font-names.js", "htdocs/js/external/icon-font-names.js.gz" ]
+		],
+		"dev": [
+			[ "deleteFiles", "htdocs/css/_combo*" ],
+			[ "deleteFiles", "htdocs/js/_combo*" ],
+			[ "deleteFile", "htdocs/index.html" ],
+			[ "deleteFile", "htdocs/index.html.gz" ],
+			[ "symlinkFile", "htdocs/index-dev.html", "htdocs/index.html" ],
+			[ "symlinkFile", "sample_conf", "conf" ]
+		],
+		"dist": [
+			[ "copyDir", "sample_conf", "conf", { "exclusive": true } ],
+			[ "generateInitialSecretKey", { "file": "conf/overrides.json" } ],
+			{
+				"action": "bundleCompress",
+				"minify": {
+					"level": {
+						"1": {
+							"all": false,
+							"removeWhitespace": true,
+							"removeComments": true
+						},
+						"2": {
+							"all": false
+						}
+					}
+				},
+				"strip_source_maps": true,
+				"dest_bundle": "htdocs/css/_combo.css",
+				"src_html_file": "htdocs/index-dev.html",
+				"dest_html_file": "htdocs/index.html",
+				"match_key": "COMBINE_STYLE",
+				"dest_bundle_tag": "<link rel=\"stylesheet\" href=\"/css/_combo.css?v=[version]\">"
+			},
+			{
+				"action": "bundleCompress",
+				"minify": {
+					"compress": false,
+					"mangle": false,
+					"output": {
+						"comments": false,
+						"beautify": false
+					}
+				},
+				"header": "/* Copyright (c) PixlCore LLC. */",
+				"dest_bundle": "htdocs/js/_combo.js",
+				"src_html_file": "htdocs/index.html",
+				"dest_html_file": "htdocs/index.html",
+				"match_key": "COMBINE_SCRIPT",
+				"dest_bundle_tag": "<script src=\"/js/_combo.js?v=[version]\"></script>"
+			},
+			{
+				"action": "printMessage",
+				"lines": [
+					"Welcome to xyOps!",
+					"First time installing?  You should configure your settings in '/opt/xyops/conf/config.json'.",
+					"Then, to start the service, type: '/opt/xyops/bin/control.sh start'.",
+					"For full docs, please visit: http://github.com/pixlcore/xyops",
+					"Enjoy!"
+				]
+			}
+		]
+	}
+}

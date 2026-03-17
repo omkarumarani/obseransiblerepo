@@ -1,0 +1,664 @@
+/* xyOps Workflow Editor and Viewer */
+
+/* Copyright (c) 2019 - 2026 PixlCore LLC
+Released under the BSD 3-Clause License.
+See the LICENSE.md file in this repository. */
+
+.wf_container {
+	position: relative;
+	/* overflow: hidden; */
+	
+	user-select: none;
+	-moz-user-select: none;
+	-webkit-user-select: none;
+}
+
+.wf_root {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	
+	background-color: var(--box-background-color);
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="2" cy="2" r="1" fill="rgba(128,130,132,0.55)" /></svg>');
+	background-size: 20px 20px;
+	
+	cursor: grab;
+}
+.wf_root.wf_tool_draw {
+	cursor: default;
+}
+
+.wf_fade {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	
+	mask-image: linear-gradient(to bottom, transparent 0px, transparent 25px, black 50px, black calc(100% - 50px), transparent calc(100% - 25px), transparent 100%),
+		linear-gradient(to right, transparent 0px, black 25px, black calc(100% - 25px), transparent 100%);
+	mask-composite: intersect;
+}
+
+.wf_container.preview .wf_fade {
+	mask-image: linear-gradient(to bottom, transparent 0px, black 25px, black calc(100% - 25px), transparent 100%),
+		linear-gradient(to right, transparent 0px, black 25px, black calc(100% - 25px), transparent 100%);
+	pointer-events: none;
+}
+
+.wf_container.job_preview .wf_fade {
+	mask-image: linear-gradient(to bottom, transparent 0px, black 25px, black calc(100% - 25px), transparent 100%),
+		linear-gradient(to right, transparent 0px, black 25px, black calc(100% - 25px), transparent 100%);
+}
+
+.wf_canvas {
+	position: absolute; 
+	left: 0; 
+	top: 0; 
+	width: 100%; 
+	height: 100%; 
+	z-index: 1; 
+	pointer-events: none;
+}
+
+.wf_grid_header {
+	position: absolute;
+	left: 0;
+	top: 1px;
+	width: 100%;
+	height: 30px;
+	z-index: 4;
+}
+.wf_grid_header > .wf_title {
+	height: 30px;
+	line-height: 30px;
+	/* background: var(--box-background-color); */
+	font-size: 14px;
+	font-weight: bold;
+	text-transform: uppercase;
+	color: var(--theme-color);
+	/* box-shadow: 0px 0px 4px 4px var(--box-background-color); */
+}
+.wf_grid_header > .wf_title i.mdi:before {
+	transform: scale(1.25);
+}
+.wf_grid_header > .wf_title i.mdi {
+	padding-right: 2px;
+}
+.wf_grid_header div.button.right {
+	margin-left: 14px;
+	margin-right: 1px;
+}
+.wf_grid_header div.button.left {
+	margin-right: 14px;
+}
+
+.wf_container.dragging .wf_grid_header {
+	pointer-events: none;
+	cursor: grabbing;
+}
+
+.wf_sel_msg, .wf_zoom_msg {
+	background: var(--box-background-color);
+	margin-left: 14px;
+	font-size: 12px;
+	text-transform: uppercase;
+	color: var(--label-color);
+	line-height: 30px;
+}
+.wf_zoom_msg {
+	margin-left: 0px;
+}
+
+.wf_node {
+	position: absolute;
+	z-index: 3;
+	cursor: pointer;
+}
+.wf_node.selected {
+	cursor: default;
+}
+
+.wf_event {
+	background: var(--background-color);
+	border: 2px solid var(--border-color);
+	border-radius: 16px;
+	
+	width: 275px;
+	height: auto;
+}
+.wf_event.selected {
+	outline: 2px dashed var(--theme-color);
+}
+.wf_container.job_preview .wf_event.selected {
+	outline: 2px dashed var(--theme-color-highlight);
+	outline-offset: 4px;
+}
+
+.wf_event_title {
+	height: 30px;
+	line-height: 30px;
+	background: var(--table-header-background-color);
+	font-weight: bold;
+	text-transform: none;
+	color: var(--label-color);
+	padding-left: 8px;
+	padding-right: 12px;
+	
+	border-top-left-radius: 16px;
+	border-top-right-radius: 16px;
+	
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+body.dark .wf_event_title {
+	background: var(--form-background-color);
+}
+.wf_event_title i.mdi {
+	padding-right: 5px;
+}
+.wf_event_title i.mdi:before {
+	transform: scale(1.25);
+}
+.wf_body {
+	padding: 8px;
+	max-height: 250px;
+	overflow-y: auto;
+}
+
+.wf_fallback_icon {
+	height: 96px;
+	line-height: 96px;
+	font-size: 72px;
+	text-align: center;
+	color: var(--label-color);
+	display: none;
+}
+
+.wf_body .summary_grid {
+	padding: 10px;
+	grid-row-gap: 14px;
+}
+.wf_body .summary_grid .info_label {
+	font-size: 12px;
+	cursor: inherit;
+	
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.wf_body .summary_grid .info_value {
+	margin-top: 2px;
+	font-size: 12px;
+}
+
+#d_wf_editor.zoom_quarter .wf_body > .wf_fallback_icon { display: block; }
+#d_wf_editor.zoom_quarter .wf_body > .summary_grid { display: none; }
+#d_wf_editor.zoom_quarter .wf_ent_title { display: none; }
+#d_wf_editor.zoom_quarter .wf_ent_label { display: none; }
+#d_wf_editor.zoom_quarter .wf_trig_label { display: none; }
+
+.wf_pole {
+	position: absolute;
+	width: 12px;
+	height: 12px;
+	margin-top: -6px;
+	margin-left: -6px;
+	background: var(--icon-color);
+	border-radius: 999em;
+	z-index: 1;
+	
+	font-size: 12px;
+	line-height: 12px;
+	text-align: center;
+	color: white;
+}
+.wf_pole i.mdi {
+	display: none;
+}
+
+.wf_pole_button {
+	position: absolute;
+	width: 24px;
+	height: 24px;
+	margin-top: -12px;
+	margin-left: -12px;
+	background: var(--theme-color);
+	border-radius: 999em;
+	z-index: 2;
+	cursor: pointer;
+	
+	font-size: 24px;
+	line-height: 24px;
+	text-align: center;
+	color: white;
+}
+.wf_pole_button:hover {
+	background: var(--theme-color-highlight);
+}
+
+.wf_pole_button.wf_input_pole { background: var(--blue); }
+.wf_pole_button.wf_input_pole:hover { background: var(--blue-highlight); }
+
+.wf_pole_button.wf_output_pole { background: var(--blue); }
+.wf_pole_button.wf_output_pole:hover { background: var(--blue-highlight); }
+
+.wf_pole_button.wf_down_pole { background: var(--cyan); }
+.wf_pole_button.wf_down_pole:hover { background: var(--cyan-highlight); }
+
+.wf_ent_trigger > .wf_pole_button.wf_output_pole:hover { background: var(--orange-highlight); }
+.wf_ent_action > .wf_pole_button.wf_input_pole:hover { background: var(--green-highlight); }
+.wf_ent_limit > .wf_pole_button.wf_up_pole:hover { background: var(--cyan-highlight); }
+
+.wf_ent_controller > .wf_pole_button.wf_input_pole:hover { background: var(--purple-highlight); }
+.wf_ent_controller > .wf_pole_button.wf_output_pole:hover { background: var(--purple-highlight); }
+
+/* .wf_pole_button.soldering { background: var(--label-color) !important; } */
+
+.wf_input_pole {
+	left: calc(0% - 1px);
+	top: 50%;
+	background: var(--blue);
+}
+.wf_output_pole {
+	left: calc(100% + 1px);
+	top: 50%;
+	background: var(--blue);
+}
+.wf_down_pole {
+	left: 50%;
+	top: calc(100% + 1px);
+	background: var(--cyan);
+	
+	/* background: var(--cyan);
+	transform-origin: center;
+	transform: scale(0.8); */
+	/* border: 1px solid var(--border-color); */
+	/* border-radius: 0;
+	transform-origin: center;
+	transform: rotate(45deg) scale(0.8); */
+}
+
+.wf_event.disabled .wf_pole {
+	background: var(--icon-color) !important;
+}
+
+.wf_entity {
+	width: 64px;
+}
+.wf_entity:has(> .wf_ent_controller) {
+	width: 128px;
+}
+
+.wf_entity.selected > div {
+	outline: 2px dashed var(--theme-color);
+}
+.wf_entity.disabled > div {
+	color: var(--icon-color) !important;
+}
+.wf_entity.disabled .wf_pole {
+	background: var(--icon-color) !important;
+}
+.wf_entity.error > div {
+	color: var(--red) !important;
+	border-color: var(--red) !important;
+}
+.wf_ent_trigger, .wf_ent_action, .wf_ent_limit, .wf_ent_controller {
+	position: relative;
+	left: 0px;
+	width: 64px;
+	height: 64px;
+	line-height: 61px;
+	text-align: center;
+	font-size: 32px;
+	color: var(--label-color);
+	background: var(--background-color);
+	border: 2px solid var(--border-color);
+	
+	/* outline: 2px dashed var(--theme-color); */
+}
+.wf_ent_trigger {
+	border-radius: 999em 0px 0px 999em;
+	color: var(--orange);
+}
+.wf_ent_trigger.wf_option {
+	border-radius: 999em;
+	color: var(--cyan);
+}
+.wf_ent_action {
+	border-radius: 0px 999em 999em 0px;
+	color: var(--green);
+}
+.wf_ent_controller {
+	width: 128px;
+	left: 0px;
+	border-radius: 999em;
+	color: var(--purple);
+}
+.wf_ent_limit {
+	border-radius: 0;
+	transform-origin: center;
+	transform: rotate(45deg) scale(0.7);
+	color: var(--cyan);
+}
+.wf_ent_title {
+	display: block;
+	position: absolute;
+	width: 128px;
+	top: 70px;
+	left: -32px;
+	text-align: center;
+	font-size: 12px;
+	font-weight: bold;
+	color: var(--label-color);
+	text-shadow: -1px -1px 1px var(--box-background-color), 1px -1px 1px var(--box-background-color), 1px 1px 1px var(--box-background-color), -1px 1px 1px var(--box-background-color);
+	
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.wf_ent_label {
+	display: block;
+	position: absolute;
+	width: 128px;
+	top: 85px;
+	left: -32px;
+	text-align: center;
+	font-size: 12px;
+	font-weight: normal;
+	color: var(--label-color);
+	text-shadow: -1px -1px 1px var(--box-background-color), 1px -1px 1px var(--box-background-color), 1px 1px 1px var(--box-background-color), -1px 1px 1px var(--box-background-color);
+	
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.wf_ent_trigger > .wf_output_pole {
+	left: calc(100% + 1px);
+	background: var(--orange);
+}
+.wf_ent_action > .wf_input_pole {
+	left: calc(0% - 1px);
+	background: var(--green);
+}
+.wf_ent_controller > .wf_input_pole {
+	left: calc(0% - 1px);
+	background: var(--purple);
+}
+.wf_ent_controller > .wf_output_pole {
+	left: calc(100% + 1px);
+	background: var(--purple);
+}
+.wf_ent_limit > .wf_up_pole {
+	left: 50%;
+	top: calc(0% - 1px);
+	background: var(--cyan);
+	transform-origin: center;
+	transform: translate(-32px, 0) scale(1) rotate(-45deg);
+}
+.wf_ent_limit > i.mdi:before {
+	transform-origin: center;
+	transform: rotate(-45deg) scale(1.25);
+}
+
+.wf_container.job_preview .wf_entity, .wf_container.job_preview .wf_condition, .wf_container.job_preview .wf_note {
+	pointer-events: none;
+}
+
+/* Condition lives inside of a wire connection */
+
+.wf_condition {
+	position: absolute;
+	width: 32px;
+	height: 32px;
+	line-height: 32px;
+	font-size: 32px;
+	text-align: center;
+	border-radius: 999px;
+	color: white;
+	z-index: 2;
+	cursor: pointer;
+	text-shadow: 0px 1px 0px rgba(0, 0, 0, 0.5);
+}
+body.dark .wf_condition {
+	color: rgba(255, 255, 255, 0.8);
+}
+
+.wf_condition.start { background: var(--orange); }
+.wf_condition.complete { background: var(--blue); }
+.wf_condition.continue { background: var(--teal); font-size: 24px; }
+.wf_condition.success { background: var(--green); }
+.wf_condition.error { background: var(--red); }
+.wf_condition.warning { background: var(--yellow); font-size: 28px; }
+.wf_condition.critical { background: var(--purple); }
+.wf_condition.abort { background: var(--gray); }
+.wf_condition.tag { background: var(--pink); font-size: 28px; }
+.wf_condition.disabled { background: var(--icon-color); }
+
+.wf_condition.start:hover { background: var(--orange-highlight); }
+.wf_condition.complete:hover { background: var(--blue-highlight); }
+.wf_condition.continue:hover { background: var(--teal-highlight); }
+.wf_condition.success:hover { background: var(--green-highlight); }
+.wf_condition.error:hover { background: var(--red-highlight); }
+.wf_condition.warning:hover { background: var(--yellow-highlight); }
+.wf_condition.critical:hover { background: var(--purple-highlight); }
+.wf_condition.abort:hover { background: var(--gray-highlight); }
+.wf_condition.tag:hover { background: var(--pink-highlight); }
+
+.wf_condition.popped {
+	outline: 2px dashed var(--theme-color);
+}
+
+.wf_trig_label {
+	position: absolute;
+	width: 72px;
+	top: 34px;
+	left: -20px;
+	line-height: 12px;
+	text-align: center;
+	font-size: 11px;
+	font-weight: bold;
+	text-shadow: -1px -1px 1px var(--box-background-color), 1px -1px 1px var(--box-background-color), 1px 1px 1px var(--box-background-color), -1px 1px 1px var(--box-background-color);
+	color: var(--label-color);
+	
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Note */
+
+.wf_node.wf_note {
+	z-index: 0;
+}
+.wf_note {
+	width: 275px;
+	height: auto;
+	border-radius: 16px;
+	background-color: var(--box-background-color);
+	font-size: 13px;
+}
+.wf_note.wf_wide {
+	width: 550px;
+}
+.wf_note.selected {
+	outline: 2px dashed var(--theme-color);
+}
+
+.wf_note .markdown-body {
+	padding: 10px;
+}
+
+/* Misc */
+
+.wf_grid_footer {
+	position: absolute;
+	left: 0;
+	top: 100%;
+	margin-top: -32px;
+	width: 100%;
+	height: 32px;
+	padding-top: 1px;
+	padding-bottom: 1px;
+	overflow: hidden;
+	z-index: 4;
+}
+.wf_grid_footer div.button.icon.left {
+	margin-right: 10px;
+}
+.wf_grid_footer div.button.right {
+	margin-left: 15px;
+}
+
+.wf_container.dragging .wf_grid_footer {
+	pointer-events: none;
+	cursor: grabbing;
+}
+
+.wf_button_separator {
+	width: 4px;
+	height: 30px;
+	/* background: var(--border-color); */
+	margin-right: 10px;
+}
+
+#d_wf_mouse_tracker {
+	position: absolute;
+	width: 1;
+	height: 1;
+	opacity: 0;
+	pointer-events: none;
+}
+
+#d_wf_selection_draw {
+	position: absolute;
+	pointer-events: none;
+	
+	background: color-mix(in srgb, var(--theme-color) 6%, transparent);
+	border: 1px dashed var(--theme-color-highlight);
+	z-index: 1;
+}
+
+/* Active Jobs */
+
+.wf_event {
+	--active-color: var(--blue);
+}
+.wf_ent_trigger {
+	--active-color: var(--orange);
+}
+.wf_ent_trigger.wf_option {
+	--active-color: var(--cyan);
+}
+.wf_ent_limit {
+	--active-color: var(--cyan);
+}
+.wf_ent_action {
+	--active-color: var(--green);
+}
+.wf_ent_controller {
+	--active-color: var(--purple);
+}
+
+.wf_event.wf_active, .wf_entity.wf_active > div {
+	border: 2px solid transparent !important;
+	
+	background:
+		linear-gradient(var(--background-color), var(--background-color)) padding-box,
+		linear-gradient(-45deg,
+			var(--active-color) 25%,
+			transparent 25%,
+			transparent 50%,
+			var(--active-color) 50%,
+			var(--active-color) 75%,
+			transparent 75%,
+			transparent
+		) border-box;
+	
+	background-size: 30px 30px;
+	background-position: 0 0;
+	
+	animation: wf_active_kf 1s linear infinite;
+}
+
+@keyframes wf_active_kf { to { background-position: 30px 0; } }
+
+.wf_event.wf_completed, .wf_entity.wf_completed > div {
+	border: 2px solid var(--active-color) !important;
+	
+	animation: wf_flash_kf 1s ease-in-out;
+	animation-fill-mode: forwards;
+}
+.wf_event.wf_error, .wf_entity.wf_error > div {
+	--active-color: var(--red);
+	border: 2px dashed var(--active-color) !important;
+	
+	animation: wf_flash_kf 1s ease-in-out;
+	animation-fill-mode: forwards;
+}
+.wf_entity.wf_error > div {
+	color: var(--active-color) !important;
+}
+.wf_entity.wf_error .wf_pole {
+	background: var(--active-color) !important;
+}
+
+.wf_event.wf_suspended {
+	outline: 2px dashed var(--orange);
+}
+
+/* Job Progress Indicators */
+
+.wf_active_bar {
+	position: absolute;
+	width: 100%;
+	height: 28px;
+	top: -34px;
+	left: 0;
+}
+
+.wf_active_widget {
+	position: relative;
+	float: right;
+	height: 28px;
+	margin-left: 4px;
+	color: var(--theme-color);
+	border: 1px solid var(--theme-color-highlight);
+	background: var(--box-background-color);
+	border-radius: 16px;
+	
+	padding-left: 10px;
+	padding-right: 10px;
+	font-size: 12px;
+	font-weight: bold;
+	line-height: 27px;
+}
+
+.wf_active_widget i.mdi:before {
+	transform: scale(1.3);
+}
+.wf_active_widget i.mdi {
+	padding-right: 5px;
+}
+
+.wf_active_widget.wf_suspended {
+	color: var(--orange);
+	border-color: var(--orange-highlight);
+}
+
+.wf_active_widget.wf_queued {
+	color: var(--label-color);
+	border-color: var(--icon-color);
+}
+
+/* Select Animation */
+
+@keyframes wf_flash_kf {
+	0% { box-shadow: 0px 0px 24px 12px var(--active-color); }
+	100% { box-shadow: 0px 0px 0px 0px transparent; }
+}
+
+.wf_event.wf_flash, .wf_entity.wf_flash > div {
+	animation: wf_flash_kf 2s ease-in-out;
+	animation-fill-mode: forwards;
+}

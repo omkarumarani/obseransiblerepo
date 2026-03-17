@@ -1,0 +1,106 @@
+{
+	"mem": {
+		"total": 950247424,
+		"free": 278249472,
+		"used": 247721984,
+		"available": 702525440,
+		"buffers": 96440320,
+		"cached": 333914112,
+		"swapcached": 6291456,
+		"active": 244744192,
+		"inactive": 272240640,
+		"unevictable": 16384,
+		"mlocked": 16384,
+		"swaptotal": 536866816,
+		"swapfree": 328552448,
+		"zswap": 0,
+		"zswapped": 0,
+		"dirty": 57344,
+		"writeback": 0,
+		"anonpages": 85114880,
+		"mapped": 79454208,
+		"shmem": 348160,
+		"kreclaimable": 61640704,
+		"slab": 94093312,
+		"sreclaimable": 61640704,
+		"sunreclaim": 32452608,
+		"kernelstack": 4898816,
+		"pagetables": 7876608,
+		"secpagetables": 0,
+		"nfs_unstable": 0,
+		"bounce": 0,
+		"writebacktmp": 0,
+		"commitlimit": 1011990528,
+		"committed_as": 1605251072,
+		"vmalloctotal": 267353325568,
+		"vmallocused": 14790656,
+		"vmallocchunk": 0,
+		"percpu": 786432,
+		"cmatotal": 268435456,
+		"cmafree": 130555904
+	},
+	"cpu": {
+		"avgLoad": 0.02,
+		"currentLoad": 0.7600000000000051,
+		"cpus": [
+			{
+				"user": 0,
+				"nice": 0,
+				"system": 0,
+				"idle": 100,
+				"iowait": 0,
+				"irq": 0,
+				"softirq": 0,
+				"active": 0
+			},
+			{
+				"user": 0,
+				"nice": 0,
+				"system": 0,
+				"idle": 100,
+				"iowait": 0,
+				"irq": 0,
+				"softirq": 0,
+				"active": 0
+			},
+			{
+				"user": 1.01,
+				"nice": 0,
+				"system": 0,
+				"idle": 98.98,
+				"iowait": 0,
+				"irq": 0,
+				"softirq": 0,
+				"active": 1.019999999999996
+			},
+			{
+				"user": 0,
+				"nice": 0,
+				"system": 0,
+				"idle": 100,
+				"iowait": 0,
+				"irq": 0,
+				"softirq": 0,
+				"active": 0
+			}
+		],
+		"totals": {
+			"user": 0.25,
+			"nice": 0,
+			"system": 0.25,
+			"idle": 99.24,
+			"iowait": 0.25,
+			"irq": 0,
+			"softirq": 0,
+			"active": 0.7600000000000051
+		}
+	},
+	"fs": {
+		"rx": 1444488704,
+		"wx": 16301503488
+	},
+	"net": {
+		"rx": 19789171661,
+		"tx": 3416981759
+	}
+}

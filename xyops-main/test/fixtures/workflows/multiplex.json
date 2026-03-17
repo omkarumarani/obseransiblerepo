@@ -1,0 +1,121 @@
+{
+	"type": "xypdf",
+	"description": "xyOps Portable Data Object",
+	"version": "1.0",
+	"items": [
+		{
+			"type": "event",
+			"data": {
+				"id": "emjau3054t6z80rr",
+				"title": "Simple Multiplex Example",
+				"enabled": true,
+				"targets": [],
+				"params": {},
+				"fields": [],
+				"triggers": [
+					{
+						"enabled": true,
+						"type": "manual",
+						"id": "noy8pgjj"
+					}
+				],
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"notes": "",
+				"workflow": {
+					"nodes": [
+						{
+							"id": "noy8pgjj",
+							"type": "trigger",
+							"x": -82,
+							"y": 325
+						},
+						{
+							"id": "nizewm42",
+							"type": "job",
+							"data": {
+								"params": {},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "",
+								"category": "general",
+								"plugin": "shellplug",
+								"icon": ""
+							},
+							"x": 322,
+							"y": 212
+						},
+						{
+							"id": "na53kpwm",
+							"type": "controller",
+							"data": {
+								"controller": "multiplex",
+								"stagger": 0,
+								"continue": 100
+							},
+							"x": 94,
+							"y": 321
+						},
+						{
+							"id": "n68r2e20",
+							"type": "action",
+							"data": {
+								"enabled": true,
+								"type": "email",
+								"users": "admin"
+							},
+							"x": 797,
+							"y": 265
+						}
+					],
+					"connections": [
+						{
+							"id": "c1mddljh",
+							"source": "noy8pgjj",
+							"dest": "na53kpwm"
+						},
+						{
+							"id": "ck0gn81t",
+							"source": "na53kpwm",
+							"dest": "nizewm42"
+						},
+						{
+							"id": "c5u0g98q",
+							"source": "nizewm42",
+							"dest": "n68r2e20",
+							"condition": "continue"
+						}
+					]
+				},
+				"category": "general",
+				"type": "workflow",
+				"icon": "",
+				"tags": [],
+				"plugin": "_workflow",
+				"username": "admin",
+				"modified": 1766025667,
+				"created": 1766025664,
+				"revision": 2
+			}
+		}
+	]
+}

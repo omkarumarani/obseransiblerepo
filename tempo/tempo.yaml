@@ -1,0 +1,251 @@
+# tempo/tempo.yaml
+# ----------------
+# Grafana Tempo configuration for the Observability Learning project.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT TEMPO DOES
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Tempo is a distributed tracing backend.  It receives completed traces
+# (collections of spans) and stores them on disk so you can retrieve and
+# inspect them later.
+#
+# Its job is purely storage and retrieval.  It does NOT compute metrics,
+# aggregate data, or maintain indexes the same way Prometheus does.
+# Instead it stores the raw spans and lets you look up a trace by its
+# trace_id.
+#
+# Traces vs Metrics — the key difference
+# ───────────────────────────────────────
+# Metrics:  aggregated numbers over time.  "How many requests per second?"
+#           Prometheus stores these efficiently because they are small (just
+#           numbers), but you lose all context about individual requests.
+#
+# Traces:   the full story of ONE request through all services.
+#           Expensive to store because each span is a rich structured object,
+#           but invaluable when you need to debug a slow or failed request.
+#
+# You use BOTH together: Prometheus tells you THAT something is slow;
+# Tempo tells you WHY by showing you the exact request that was slow.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# TEMPO MODES
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Tempo supports two deployment modes:
+#
+#   monolithic  — All components run in one process.  Perfect for local
+#                 learning and small workloads.  This is what we use here.
+#
+#   microservices — Each component (ingester, querier, etc.) runs separately.
+#                   Used in large-scale production deployments.
+#
+# The "target: all" setting below activates monolithic mode.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# TRACE INGESTION PATH IN THIS PROJECT
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   frontend-api  ──OTLP/gRPC──┐
+#                               ▼
+#                        otel-collector :4317
+#                               │
+#                        otlp/tempo exporter
+#                               │  OTLP/gRPC
+#                               ▼
+#                        Tempo :4317  (internal port)
+#                               │
+#                        local disk storage
+#                               │
+#                        Tempo query API  :3200
+#                               │
+#   backend-api  ──OTLP/gRPC──┘       (Grafana will query here later)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVER
+# HTTP server that serves the Tempo API (health, trace retrieval, metrics).
+# Grafana queries this port to display traces.
+# ─────────────────────────────────────────────────────────────────────────────
+server:
+  # Tempo's query and health API.
+  # Health check:  GET http://localhost:3200/ready
+  # Trace lookup:  GET http://localhost:3200/api/traces/<trace_id>
+  http_listen_port: 3200
+
+  # Internal gRPC port used by Tempo's own components when talking to each
+  # other (ingester → querier communication).  Not accessed externally.
+  grpc_listen_port: 9095
+
+  # Reduce Tempo's internal log noise.  Use "debug" temporarily if you
+  # need to diagnose why traces are not appearing.
+  log_level: info
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DISTRIBUTOR
+# The distributor is the first component a trace hits when it arrives.
+# It receives spans from the OTel Collector and routes them to ingesters.
+#
+# In monolithic mode the distributor and ingester run in the same process,
+# so this just configures which protocols Tempo accepts for trace ingestion.
+# ─────────────────────────────────────────────────────────────────────────────
+distributor:
+  receivers:
+    # ── OTLP receiver ──────────────────────────────────────────────────────────
+    # Accept traces from the OTel Collector over OTLP.
+    # The collector's otlp/tempo exporter sends here.
+    #
+    # We expose OTLP over gRPC only.  The collector is already on the same
+    # Docker network (obs-net) and uses gRPC as its default transport.
+    #
+    # Why only gRPC, not HTTP?
+    # gRPC is more efficient (binary protobuf framing, multiplexing, backpressure).
+    # HTTP/protobuf is the alternative if gRPC is blocked by a proxy.
+    # Since both the collector and Tempo are on the same Docker network,
+    # gRPC works perfectly.
+    #
+    # IMPORTANT PORT NOTE:
+    # Tempo's internal OTLP/gRPC port is 4317 — the same number as the
+    # collector's OTLP receiver.  They are on different containers so there
+    # is no conflict.  Inside Docker, the collector connects to
+    # "tempo:4317".  On the host, this port is NOT exposed (it would
+    # conflict with the collector's exposed 4317).  Only the Tempo HTTP API
+    # port 3200 is exposed to the host.
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INGESTER
+# The ingester receives spans from the distributor and buffers them in memory
+# before flushing to storage.
+#
+# trace_idle_period: how long to wait after the last span arrives before
+#   flushing a trace to storage.  5s is good for local debugging — traces
+#   appear quickly.  Production uses 10-30s to reduce write amplification.
+#
+# max_block_duration: the maximum time a block is held in memory before being
+#   forced to flush to storage, even if traces are still arriving.
+#   This caps memory usage and ensures data is persisted regularly.
+# ─────────────────────────────────────────────────────────────────────────────
+ingester:
+  trace_idle_period: 5s      # flush a trace 5 s after its last span arrives
+  max_block_duration: 5m     # force flush every 5 minutes regardless
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPACTOR
+# The compactor merges small trace blocks on disk into larger ones.
+# This improves query performance and reduces file count over time.
+#
+# compaction_window: how far back in time to look for blocks to merge.
+# block_retention:   how long to keep trace data before deleting it.
+#
+# For a local lab, 24 hours of retention is enough to see traces from
+# today's session without accumulating too much data on disk.
+# ─────────────────────────────────────────────────────────────────────────────
+compactor:
+  compaction:
+    compaction_window: 1h
+    block_retention: 24h     # delete traces older than 24 hours
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STORAGE
+# Where Tempo writes trace blocks.
+#
+# backend: local  — write trace blocks to the local filesystem.
+#
+# For production, the backend would be an object store (S3, GCS, Azure Blob).
+# For local learning, the filesystem is simpler, has no credentials to manage,
+# and is fast enough for hundreds of traces.
+#
+# The path /var/tempo is inside the container.  In docker-compose this directory
+# is mapped to the named volume "tempo-data" so trace data survives restarts.
+#
+# WAL (Write-Ahead Log)
+# ─────────────────────
+# The WAL is a crash-recovery buffer.  Spans are written here first, then
+# flushed to the block storage.  If Tempo crashes mid-flush, the WAL lets
+# it recover without losing data.
+# ─────────────────────────────────────────────────────────────────────────────
+storage:
+  trace:
+    backend: local
+
+    local:
+      path: /var/tempo/blocks
+
+    wal:
+      path: /var/tempo/wal
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUERIER
+# The querier handles trace retrieval requests from the API.
+# When Grafana asks "show me trace abc123", the querier finds the right
+# block on disk, reads the spans, and returns them.
+#
+# frontend_worker connects the querier to the query-frontend component.
+# In monolithic mode this is a loopback connection within the same process.
+# ─────────────────────────────────────────────────────────────────────────────
+querier:
+  frontend_worker:
+    frontend_address: localhost:9095
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUERY FRONTEND
+# The query frontend is the HTTP entry point for trace retrieval.
+# It receives API requests, splits large queries into sub-queries,
+# and assembles the results.
+#
+# search.default_result_limit: how many traces to return in a search response.
+# 20 is enough for a local learning lab.
+# ─────────────────────────────────────────────────────────────────────────────
+query_frontend:
+  search:
+    default_result_limit: 20
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# METRICS GENERATOR  (disabled)
+# Tempo can generate RED metrics (Rate, Error, Duration) from trace data.
+# This creates a feedback loop where traces produce metrics that Prometheus
+# can scrape — useful for auto-generating service-level dashboards.
+#
+# We are NOT enabling it here for three reasons:
+#   1. We already have real app metrics from the OTel SDK.
+#   2. It requires a remote_write endpoint (Prometheus) to be configured.
+#   3. It adds complexity before the core trace flow is established.
+#
+# When you are ready to enable it (after adding Grafana), the config is:
+#
+#   metrics_generator:
+#     registry:
+#       external_labels:
+#         source: tempo
+#     storage:
+#       path: /var/tempo/generator/wal
+#     processors: [service-graphs, span-metrics]
+#
+# And in overrides:
+#   defaults:
+#     metrics_generator:
+#       processors: [service-graphs, span-metrics]
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USAGE REPORT  (disabled)
+# Tempo phones home to report anonymous usage statistics by default.
+# Disabling it keeps the local lab self-contained and avoids any external
+# network calls from the container.
+# ─────────────────────────────────────────────────────────────────────────────
+usage_report:
+  reporting_enabled: false

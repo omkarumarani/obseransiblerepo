@@ -1,0 +1,174 @@
+# prometheus/alert-rules.yml
+# ─────────────────────────────────────────────────────────────
+# AIOps Alert Rules
+#
+# These rules are evaluated by Prometheus every 15 seconds.
+# When a rule fires, Prometheus sends the alert to Alertmanager
+# which then POSTs it to the AIOps Bridge → xyOps ticket.
+#
+# Labels:
+#   severity: info | warning | critical
+#   team:     platform (owner team)
+#
+# Annotations used by the bridge:
+#   summary:       short 1-line description (becomes ticket title)
+#   description:   full detail (becomes ticket body)
+#   dashboard_url: deep-link into Grafana (put in ticket)
+#   runbook_url:   link to xyOps or a runbook doc
+# ─────────────────────────────────────────────────────────────
+
+groups:
+
+  # ────────────────────────────────────────────────────────────
+  # Error Rate Alerts
+  # Based on http_errors_total / http_requests_total counters
+  # emitted by both services via the OTel collector.
+  # ────────────────────────────────────────────────────────────
+  - name: error_rate
+    interval: 15s
+    rules:
+
+      # Warning: >5% of requests are errors for ≥1 minute
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum by (service_name) (rate(http_errors_total[2m]))
+            /
+            sum by (service_name) (rate(http_requests_total[2m]))
+          ) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High error rate on {{ $labels.service_name }}"
+          description: >-
+            {{ $labels.service_name }} error rate is
+            {{ $value | humanizePercentage }} over the last 2 minutes.
+            Expected < 5%.
+          dashboard_url: "http://grafana:3000/d/obs-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Critical: >20% of requests are errors for ≥30 seconds
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            sum by (service_name) (rate(http_errors_total[2m]))
+            /
+            sum by (service_name) (rate(http_requests_total[2m]))
+          ) > 0.20
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "CRITICAL error rate on {{ $labels.service_name }}"
+          description: >-
+            {{ $labels.service_name }} error rate is
+            {{ $value | humanizePercentage }} — immediate action required.
+            SLO breach imminent.
+          dashboard_url: "http://grafana:3000/d/obs-overview"
+          runbook_url: "http://xyops:5522"
+
+  # ────────────────────────────────────────────────────────────
+  # Latency Alerts
+  # Based on http_request_duration_seconds histogram.
+  # ────────────────────────────────────────────────────────────
+  - name: latency
+    interval: 15s
+    rules:
+
+      # Warning: p99 latency > 3 seconds for ≥2 minutes
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (service_name, le) (
+              rate(http_request_duration_seconds_bucket[5m])
+            )
+          ) > 3.0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High p99 latency on {{ $labels.service_name }}"
+          description: >-
+            {{ $labels.service_name }} p99 latency is
+            {{ $value | humanizeDuration }} over last 5 minutes (threshold 3s).
+            Check for slow downstream calls or resource saturation.
+          dashboard_url: "http://grafana:3000/d/obs-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Warning: p50 (median) latency > 1 second — something broadly wrong
+      - alert: HighMedianLatency
+        expr: |
+          histogram_quantile(
+            0.50,
+            sum by (service_name, le) (
+              rate(http_request_duration_seconds_bucket[5m])
+            )
+          ) > 1.0
+        for: 3m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Elevated median latency on {{ $labels.service_name }}"
+          description: >-
+            {{ $labels.service_name }} median (p50) latency is
+            {{ $value | humanizeDuration }} — more than half of requests are slow.
+          dashboard_url: "http://grafana:3000/d/obs-overview"
+          runbook_url: "http://xyops:5522"
+
+  # ────────────────────────────────────────────────────────────
+  # Traffic Anomaly Alerts
+  # Detect unusual spikes or drops in request rate.
+  # ────────────────────────────────────────────────────────────
+  - name: traffic
+    interval: 15s
+    rules:
+
+      # Traffic spike: current rate > 5x the 10-min average
+      - alert: TrafficSpike
+        expr: |
+          (
+            sum by (service_name) (rate(http_requests_total[1m]))
+            /
+            sum by (service_name) (rate(http_requests_total[10m]))
+          ) > 5
+        for: 30s
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Traffic spike detected on {{ $labels.service_name }}"
+          description: >-
+            {{ $labels.service_name }} is receiving 5x its normal request rate.
+            May indicate a DDoS, runaway client, or load test.
+          dashboard_url: "http://grafana:3000/d/obs-overview"
+          runbook_url: "http://xyops:5522"
+
+  # ────────────────────────────────────────────────────────────
+  # OTel Collector Health
+  # Monitor the collector itself — if it drops data, all signals are blind.
+  # ────────────────────────────────────────────────────────────
+  - name: collector_health
+    interval: 15s
+    rules:
+
+      - alert: CollectorDroppingData
+        expr: |
+          rate(otelcol_processor_dropped_spans[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "OTel Collector is dropping spans"
+          description: >-
+            The OpenTelemetry Collector is dropping spans — likely memory pressure.
+            Current drop rate: {{ $value | humanize }}/s.
+            Check collector memory limits and batch processor settings.
+          dashboard_url: "http://grafana:3000"
+          runbook_url: "http://xyops:5522"

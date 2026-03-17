@@ -1,0 +1,40 @@
+# grafana/provisioning/dashboards/dashboards.yaml
+# ------------------------------------------------
+# Grafana dashboard provisioning configuration.
+#
+# This file tells Grafana WHERE to find dashboard JSON files on disk.
+# It does not contain the dashboards themselves — those live as .json files
+# in the same directory (or a subdirectory).
+#
+# HOW IT WORKS
+# ────────────
+# Grafana watches the path listed in `options.path` and imports every .json
+# file it finds as a dashboard.  If you edit a .json file and restart
+# (or wait for the updateIntervalSeconds poll), the dashboard is updated.
+#
+# disableDeletion: true
+#   Prevents Grafana from deleting provisioned dashboards when you remove
+#   the .json file.  Useful in production to avoid accidents.
+#   Set to false in a learning lab so you can clean up freely.
+#
+# editable: true
+#   Allows editing provisioned dashboards in the Grafana UI.
+#   Changes made in the UI are NOT written back to disk — if you want to
+#   persist edits, copy the JSON from Dashboard Settings → JSON Model
+#   and overwrite the .json file manually.
+#
+# updateIntervalSeconds: 30
+#   Grafana polls for new/changed dashboard files every 30 seconds.
+#   You can restart the container to pick up changes immediately.
+
+apiVersion: 1
+
+providers:
+  - name: "obs-learning"
+    orgId: 1
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards

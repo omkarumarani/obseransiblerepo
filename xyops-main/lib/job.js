@@ -1,0 +1,1755 @@
+// xyOps Job Layer
+// Copyright (c) 2019 - 2026 PixlCore LLC
+// Released under the BSD 3-Clause License.
+// See the LICENSE.md file in this repository.
+
+const fs = require('fs');
+const zlib = require('zlib');
+const Path = require('path');
+const cp = require('child_process');
+const async = require("async");
+const jexl = require('jexl');
+const { marked } = require('marked');
+const sanitizeHtml = require('sanitize-html');
+const Tools = require("pixl-tools");
+const noop = function() {};
+
+class Jobs {
+	
+	logJob(level, msg, data) {
+		// log debug msg with pseudo-component
+		if (this.debugLevel(level)) {
+			this.logger.set( 'component', 'Job' );
+			this.logger.print({ category: 'debug', code: level, msg: msg, data: data });
+		}
+	}
+	
+	launchJob(job, callback) {
+		// begin job launch sequence
+		var self = this;
+		
+		if (!callback) callback = function(err) {
+			// log warning if callback not set
+			if (err) self.logJob(5, "Failed to launch job for event: " + job.event + ": " + err);
+		};
+		
+		// jobs come in as a copy of the event
+		// so move the event id into job.event
+		if (job.id) job.event = job.id;
+		
+		// remove event stuff we don't need
+		delete job.id;
+		delete job.title;
+		delete job.enabled;
+		delete job.triggers;
+		delete job.session_id;
+		delete job.modified;
+		delete job.created;
+		delete job.revision;
+		
+		if (!job.limits) job.limits = [];
+		if (!job.actions) job.actions = [];
+		
+		// unique id for job
+		job.id = Tools.generateShortID('j');
+		
+		// merge in category actions and res limits
+		var event = Tools.findObject( this.events, { id: job.event } );
+		var plugin = Tools.findObject( this.plugins, { id: job.plugin } );
+		var category = Tools.findObject( this.categories, { id: job.category });
+		
+		// sanity checks
+		if (!event) {
+			return callback( new Error("Event not found: " + job.event) );
+		}
+		if (!category) {
+			return callback( new Error("Category not found: " + job.category) );
+		}
+		if ((job.type != 'workflow') && !plugin) {
+			return callback( new Error("Plugin not found: " + job.plugin) );
+		}
+		
+		// make sure all necessary things are enabled
+		// early exit for these
+		if (!job.test) {
+			if (!event.enabled) {
+				return callback( new Error("Event is disabled: " + event.title) );
+			}
+			if (!category.enabled) {
+				return callback( new Error("Category is disabled: " + category.title) );
+			}
+			if (plugin && !plugin.enabled) {
+				return callback( new Error("Plugin is disabled: " + plugin.title) );
+			}
+		}
+		
+		// add category defaults too
+		if (!job.test || (job.test && job.test_actions)) {
+			(category.actions || []).forEach( function(action) {
+				// append cat actions
+				if (action.enabled) job.actions.push( Tools.mergeHashes( Tools.copyHash(action, true), { source: 'category' } ) );
+			} );
+		}
+		if (!job.test || (job.test && job.test_limits)) {
+			(category.limits || []).forEach( function(limit) {
+				// append cat limits
+				if (limit.enabled) job.limits.push( Tools.mergeHashes( Tools.copyHash(limit, true), { source: 'category' } ) );
+			} );
+		}
+		
+		// add universal default limits and actions
+		var temp_job_type = (job.type == 'workflow') ? 'workflow' : 'default';
+		
+		if (!job.test || (job.test && job.test_actions)) {
+			this.config.getPath('job_universal_actions.' + temp_job_type).forEach( function(action) {
+				if (action.enabled && action.condition) job.actions.push( Tools.mergeHashes( Tools.copyHash(action, true), { source: 'universal' } ) );
+			} );
+		}
+		if (!job.test || (job.test && job.test_limits)) {
+			this.config.getPath('job_universal_limits.' + temp_job_type).forEach( function(limit) {
+				if (limit.enabled && limit.type) job.limits.push( Tools.mergeHashes( Tools.copyHash(limit, true), { source: 'universal' } ) );
+			} );
+		}
+		
+		// event limit day max, allow authenticated manual runs to skip over this check
+		if (!job.source.match(/^(user|key)$/)) {
+			if (!Tools.findObjects(job.limits, { type: 'day', enabled: true }).every( function(limit) {
+				var count = self.getDailyCustomStat(`events.${job.event}.job_${limit.condition}`) || 0;
+				if (limit.amount && (count >= limit.amount)) {
+					callback( new Error(`Maximum daily '${limit.condition}' count of ${limit.amount} has been reached for event: ` + job.event) );
+					return false;
+				}
+				return true;
+			} )) return;
+		}
+		
+		// global job antiflood e-brake
+		var max_jobs_per_min = this.config.get('max_jobs_per_min') || 0;
+		var jobs_ran = this.stats.currentMinute.jobs || 0;
+		if (max_jobs_per_min && (jobs_ran >= max_jobs_per_min)) {
+			var err_msg = `Global jobs per minute limit has been reached (${max_jobs_per_min}/min)`;
+			return callback( new Error(err_msg) );
+		}
+		this.stats.currentMinute.jobs = jobs_ran + 1;
+		
+		// custom env vars for job
+		job.env = Object.assign( {}, this.config.get('job_env') || {}, job.env || {} );
+		
+		// initial state (may be passed in, i.e. startup/retry delays)
+		if (!job.state) job.state = 'ready';
+		job.started = Tools.timeNow();
+		
+		// job may be passed in a custom "now" from the scheduler (to run catch-up events)
+		if (!job.now) job.now = job.started;
+		
+		// keep track of job log size
+		job.log_file_size = 0;
+		
+		// copy over plugin's command, uid and gid (satellite won't have these)
+		if (plugin) {
+			job.command = this.messageSub( plugin.command, job );
+			job.script = this.messageSub( plugin.script || "", job );
+			job.uid = plugin.uid || this.config.getPath('default_plugin_credentials.event.uid') || '';
+			job.gid = plugin.gid || this.config.getPath('default_plugin_credentials.event.gid') || '';
+			job.kill = plugin.kill;
+			
+			if (plugin.runner) job.runner = true;
+			else delete job.runner;
+		} // plugin
+		
+		// apply placeholder substitution on all event params with job as context
+		if (job.params) {
+			var context = { ...job };
+			if (job.input && job.input.data) context.data = job.input.data; // convenience
+			if (job.input && job.input.files) context.files = job.input.files; // convenience
+			
+			for (var key in job.params) {
+				if (typeof(job.params[key]) == 'string') {
+					job.params[key] = this.messageSub( job.params[key], context );
+				}
+			}
+		}
+		
+		// workflows: filter out notes without 'show' prop
+		if (job.workflow && job.workflow.nodes) {
+			job.workflow.nodes = job.workflow.nodes.filter( function(node) {
+				if ((node.type == 'note') && !node.data.show) return false;
+				return true;
+			} );
+		}
+		
+		// add to activeJobs hash
+		this.activeJobs[ job.id ] = job;
+		var info = this.jobDetails[ job.id ] = {};
+		
+		// move input to details so it isn't synced to all users every second
+		if (job.input) {
+			info.input = job.input;
+			delete job.input;
+		}
+		
+		// start meta log (in memory)
+		this.appendMetaLog(job, `xyOps job starting: #${job.id}` );
+		this.appendMetaLog(job, "Source: " + Tools.ucfirst(job.source) + (job.splugin ? (' (' + job.splugin + ')') : '') + (job.stype ? (' (' + job.stype + ')') : '') );
+		if (job.type != 'adhoc') this.appendMetaLog(job, "Event ID: #" + job.event );
+		// this.appendMetaLog(job, "Date/Time: " + (new Date()).toString() );
+		if (job.workflow && job.workflow.job) this.appendMetaLog(job, "Parent Workflow Job ID: #" + job.workflow.job);
+		if (job.invisible) this.appendMetaLog(job, "Job is running invisibly.");
+		if (job.ephemeral) this.appendMetaLog(job, "Job is ephemeral.");
+		
+		// log job start
+		this.logJob(6, "Starting job", job);
+		
+		// at this point the job is ready to go into service, and will be maintained by the tick loop.
+		// this is important because the job may have a startup delay (retry or other) and we don't want to pick a target server until it goes into active state.
+		callback(null, job.id);
+		
+		// monitor job immediately, so there isn't a ~1 second delay for all launches
+		this.monitorJob(job);
+		
+		// add meta msg for delay if set
+		if (job.until) {
+			var delay_sec = Math.max(0, Math.round(job.until - job.started));
+			if (delay_sec) this.appendMetaLog(job, "Job will be delayed for " + Tools.getTextFromSeconds( delay_sec, false, false ) );
+		}
+		
+		// notify all connected users that a job has changed
+		this.doUserBroadcastAll( 'status', { 
+			epoch: Tools.timeNow(),
+			activeJobs: this.getActiveJobs(),
+			jobsChanged: true
+		} );
+		this.masterSync();
+	}
+	
+	appendJobLog(job, msg, data) {
+		// append user-generated output to job log
+		msg = '' + msg; // ensure string
+		var log_file = Path.resolve( Path.join( this.config.get('log_dir'), 'jobs', job.id + '.log' ) );
+		fs.appendFileSync( log_file, msg );
+		job.log_file_size += Buffer.byteLength(msg);
+		
+		// if any users are sitting on the job detail page for this specific job, stream up the log additions in real-time
+		// FUTURE NOTE: Savvy users can "cheat" category/group privilege here and tail any live job log if they know the ID.
+		this.doPageBroadcast( 'Job?id=' + job.id, 'log_append', { text: msg } );
+	}
+	
+	appendMetaLog(job, msg, data) {
+		// append message to special "meta" log inside the job object
+		var info = this.jobDetails[ job.id ];
+		if (!info) return; // sanity check
+		
+		this.logJob(6, "Job " + job.id + " Meta: " + msg, data);
+		
+		if (!info.activity) info.activity = [];
+		var row = { ...data, id: Tools.generateShortID('m'), epoch: Tools.timeNow(), msg: ''+msg };
+		row.server = row.server || ('m:' + this.hostID);
+		
+		info.activity.push(row);
+		
+		// keep it under control
+		if (info.activity.length > 1000) info.activity.shift();
+		
+		// update anyone watching the live job
+		this.doPageBroadcast( 'Job?id=' + job.id, 'meta_row', row );
+	}
+	
+	monitorJobs() {
+		// monitor all active jobs, called every tick, and on job completion
+		var self = this;
+		var queues = {};
+		if (!this.master) return;
+		
+		Object.values(this.activeJobs).forEach( function(job) {
+			self.monitorJob(job);
+			
+			if (job.state == 'queued') {
+				var queue_id = job.event;
+				if (job.workflow && job.workflow.node && (job.type == 'adhoc')) queue_id += '-' + job.workflow.node;
+				
+				if (!queues[queue_id]) queues[queue_id] = [];
+				queues[queue_id].push(job);
+			}
+		} ); // foreach job
+		
+		// check queues for available slots
+		for (var queue_id in queues) {
+			var queued = queues[queue_id];
+			// var event = Tools.findObject( this.events, { id: event_id } );
+			// if (!event) continue; // sanity
+			
+			var criteria = { state: 'active' };
+			if (queue_id.match(/^(\w+)\-(\w+)$/)) {
+				// support adhoc workflow jobs (where the event is the WF event)
+				var event_id = RegExp.$1;
+				var node_id = RegExp.$2;
+				criteria['event'] = event_id;
+				criteria['workflow.node'] = node_id;
+			}
+			else {
+				criteria['event'] = queue_id;
+			}
+			
+			// use limit definition from first queued job (honor system)
+			var job = queued[0];
+			var job_limit = Tools.findObject( job.limits || [], { type: 'job', enabled: true } );
+			var jobs = this.findActiveJobsDeep(criteria);
+			
+			if (job_limit && (jobs.length < job_limit.amount)) {
+				// we have room!  launch queued job waiting the longest
+				Tools.sortBy( queued, 'started', { type: 'number', dir: 1 } );
+				job = queued.shift();
+				
+				if (this.checkAvailableJobServer(job)) {
+					this.appendMetaLog(job, "Moving job state from {queued} to {ready}");
+					job.state = 'ready';
+					delete job.position;
+					this.monitorJob(job);
+					
+					// assign positions to all other jobs waiting in the queue
+					queued.forEach( function(job, idx) { job.position = idx + 1; } );
+					
+					// notify all connected users that a job has changed
+					this.doUserBroadcastAll( 'status', { 
+						epoch: Tools.timeNow(),
+						activeJobs: this.getActiveJobs(),
+						jobsChanged: true
+					} );
+					this.masterSync();
+				}
+				
+				// FUTURE NOTE: This will only launch a max of 1 queued job per event per second (per tick)
+			}
+		} // foreach queue
+	}
+	
+	monitorJob(job) {
+		// monitor job progress / state changes
+		var self = this;
+		var now = Tools.timeNow();
+		
+		switch (job.state) {
+			case 'retry_delay':
+			case 'start_delay':
+				if (now >= job.until) {
+					this.appendMetaLog(job, "Moving job state from {" + job.state + "} to {ready}");
+					job.state = 'ready';
+					delete job.until;
+					
+					// process new ready state immediately
+					return this.monitorJob(job);
+				}
+			break;
+			
+			case 'ready':
+				// job is ready to start, check limits
+				if (!this.checkJobStartLimits(job)) return;
+				
+				// pick server
+				if (!this.chooseJobServer(job)) return;
+				
+				// set state to "starting" for job start actions
+				job.state = 'starting';
+				
+				// fire job start hooks/actions
+				this.runJobActions(job, 'start', function() {
+					// server may be shutting down
+					if (self.shut) return;
+					
+					// job may have been aborted during actions
+					if (job.complete) {
+						self.finishJob(job);
+						return;
+					}
+					
+					// set state to 'active'
+					now = Tools.timeNow();
+					self.appendMetaLog(job, "Moving job state from {" + job.state + "} to {active}");
+					job.state = 'active';
+					job.started = now; // reset this to now
+					job.updated = now; // for stale check
+					job.progress = 0;
+					
+					// branch off for workflows here
+					if (job.type == 'workflow') return self.startWorkflow(job);
+					
+					// send command to server
+					var server = self.servers[ job.server ];
+					if (!server) {
+						// can happen if server died during start actions
+						self.abortJob(job, "Chosen server is no longer connected.");
+						return false;
+					}
+					
+					var socket = self.sockets[ server.socket_id ];
+					if (!socket) {
+						// should never happen, mostly a sanity check
+						self.abortJob(job, "Chosen server has no socket connection.");
+						return false;
+					}
+					
+					self.appendMetaLog(job, "Sending launch command to remote server");
+					socket.send('launch_job', {
+						job: job,
+						details: Object.assign({}, self.jobDetails[ job.id ], {
+							serverData: server.userData || {}
+						}),
+						sec: self.getSecretsForJob(job)
+					});
+					job.remote = true;
+					
+					// add job to active alerts on target server
+					self.findActiveAlerts({ server: job.server }).forEach( function(alert) {
+						alert.jobs.push( job.id );
+						if (alert.jobs.length > 100) alert.jobs.shift();
+						self.unbase.update( 'alerts', alert.id, { jobs: alert.jobs } );
+					} );
+				}); // runJobAction
+			break;
+			
+			case 'active':
+				// check all limits, check for stale update, etc.
+				if (job.type == 'workflow') this.tickWorkflow(job);
+				this.checkJobActiveLimits(job);
+			break;
+		} // switch job.state
+	}
+	
+	getActiveJobs() {
+		// get copy of active jobs for client, sans queued jobs -- return as hash
+		// (there may be thousands of queued jobs -- no need to sync them to all clients every second)
+		// (also filter out verbose props that users don't need every second)
+		var jobs = {};
+		
+		for (var id in this.activeJobs) {
+			if ((this.activeJobs[id].state != 'queued') && !this.activeJobs[id].invisible) {
+				jobs[id] = Tools.copyHashRemoveKeys( this.activeJobs[id], { input:1, data:1, files:1 } );
+			}
+		}
+		
+		return jobs;
+	}
+	
+	findActiveJobs(criteria) {
+		// find active jobs matching criteria -- return array
+		return Tools.findObjects( Object.values(this.activeJobs), criteria );
+	}
+	
+	findActiveJobsDeep(criteria) {
+		// find active jobs matching deep dot.path.notation criteria -- return array
+		return Tools.findObjectsDeep( Object.values(this.activeJobs), criteria );
+	}
+	
+	findSimilarJobs(job, criteria) {
+		// find jobs with criteria and same event, OR same wf+node if adhoc
+		criteria['event'] = job.event;
+		
+		if (job.workflow && job.workflow.node && (job.type == 'adhoc')) {
+			criteria['workflow.node'] = job.workflow.node;
+		}
+		
+		return Tools.findObjectsDeep( Object.values(this.activeJobs), criteria );
+	}
+	
+	countQueuedJobs() {
+		// return count of currently queued jobs, for client
+		return this.findActiveJobs({ state: 'queued' }).filter( job => !job.invisible ).length;
+	}
+	
+	checkJobActiveLimits(job) {
+		// check job running limits and stale updates
+		var self = this;
+		var now = Tools.timeNow();
+		var triggered = false;
+		
+		if (now - job.updated >= this.config.get('dead_job_timeout')) {
+			// job has timed out (no updates, server must be dead)
+			job.retry_ok = true; // allow retry even though we're aborting
+			this.abortJob(job, "No updates received in last " + Tools.getTextFromSeconds(this.config.get('dead_job_timeout')) + ", assuming job is dead.");
+			return;
+		}
+		
+		// time limits
+		Tools.findObjects( job.limits, { type: 'time', enabled: true } ).forEach( function(limit) {
+			if (!triggered && !limit.date && limit.duration && (now - job.started > limit.duration)) {
+				self.triggerActiveJobLimit(job, limit);
+				triggered = true;
+			}
+		} );
+		if (triggered) return;
+		
+		// log file size limits
+		Tools.findObjects( job.limits, { type: 'log', enabled: true } ).forEach( function(limit) {
+			if (!triggered && !limit.date && limit.amount && (job.log_file_size > limit.amount)) {
+				self.triggerActiveJobLimit(job, limit);
+				triggered = true;
+			}
+		} );
+		if (triggered) return;
+		
+		// memory limits (+sustain)
+		Tools.findObjects( job.limits, { type: 'mem', enabled: true } ).forEach( function(limit) {
+			if (!triggered && job.mem) {
+				if (job.mem.current > limit.amount) {
+					if (!limit.when) {
+						limit.when = now;
+						self.logJob(6, "Job has exceeded memory usage limit: " + job.id, job.mem);
+					}
+					if ((now - limit.when > limit.duration) && !limit.date) {
+						self.triggerActiveJobLimit(job, limit);
+						triggered = true;
+						return;
+					}
+				}
+				else if (limit.when) {
+					self.logJob(6, "Job is now under the memory usage limit: " + job.id, job.mem);
+					delete limit.when;
+				}
+			}
+		} );
+		
+		// cpu limits (+sustain)
+		Tools.findObjects( job.limits, { type: 'cpu', enabled: true } ).forEach( function(limit) {
+			if (!triggered && job.cpu) {
+				if (job.cpu.current > limit.amount) {
+					if (!limit.when) {
+						limit.when = now;
+						self.logJob(6, "Job has exceeded CPU usage limit: " + job.id, job.cpu);
+					}
+					if ((now - limit.when > limit.duration) && !limit.date) {
+						self.triggerActiveJobLimit(job, limit);
+						triggered = true;
+						return;
+					}
+				}
+				else if (limit.when) {
+					self.logJob(6, "Job is now under the CPU usage limit: " + job.id, job.cpu);
+					delete limit.when;
+				}
+			}
+		} );
+	}
+	
+	triggerActiveJobLimit(job, limit) {
+		// run actions for limit that has been exceeded
+		// limit: { type, amount, duration, tags, users, email, web_hook, text, abort }
+		var self = this;
+		var limit_def = Tools.findObject( this.config.getPath('ui.limit_type_menu'), { id: limit.type } );
+		var perf_start = performance.now();
+		var msg = '';
+		
+		// set flag so limit doesn't fire twice
+		if (limit.date) return;
+		
+		limit.code = 0;
+		limit.details = "";
+		limit.date = Tools.timeNow();
+		limit.elapsed_ms = 0;
+		
+		switch (limit.type) {
+			case 'time': msg = "Job elapsed time has exceeded maximum limit of " + Tools.getTextFromSeconds(limit.duration) + "."; break;
+			case 'log': msg = "Job output size has exceeded maximum limit of " + Tools.getTextFromBytes(limit.amount) + "."; break;
+			case 'mem': msg = "Job memory usage has exceeded maximum limit of " + Tools.getTextFromBytes(limit.amount) + " for " + Tools.getTextFromSeconds(limit.duration, false, true) + "."; break;
+			case 'cpu': msg = "Job CPU usage has exceeded maximum limit of " + Tools.getTextFromBytes(limit.amount) + "% for " + Tools.getTextFromSeconds(limit.duration, false, true) + "."; break;
+		}
+		limit.msg = msg;
+		
+		this.appendMetaLog(job, msg, { job_id: job.id, limit });
+		
+		// apply tags if configured, plus dedupe them
+		if (limit.tags && limit.tags.length) {
+			if (!job.tags) job.tags = [];
+			job.tags = job.tags.concat( limit.tags );
+			job.tags = [...new Set(job.tags)];
+			
+			if (limit.details) limit.details += "\n";
+			limit.details += "### Tag Details:\n\n**Applied Tags:** " + limit.tags.map( function(tag) {
+				var tag_def = Tools.findObject( self.tags, { id: tag } );
+				return tag_def ? tag_def.title : `(${tag})`;
+			} ).join(', ') + "\n";
+		}
+		
+		async.parallel(
+			[
+				function(callback) {
+					// email
+					if ((!limit.users || !limit.users.length) && !limit.email) return callback();
+					var sub_action = Tools.mergeHashes(limit, { type: 'email', template: 'job_limited', title: limit_def.title });
+					sub_action.source = Tools.ucfirst( sub_action.source || 'event' );
+					sub_action.condition = 'limit'; // for logging purposes
+					delete sub_action.details;
+					
+					// summarize actions for inclusion in email body
+					var items = [ "- **Sent this email.**" ];
+					if (limit.tags && limit.tags.length) {
+						items.push( "- **Applied tags:** " + limit.tags.map( function(tag) {
+							var tag_def = Tools.findObject( self.tags, { id: tag } );
+							return tag_def ? tag_def.title : `(${tag})`;
+						} ).join(', ') );
+					}
+					if (limit.web_hook) {
+						var hook_def = Tools.findObject( self.web_hooks, { id: limit.web_hook } );
+						items.push( "- **Fired Web Hook**: " + (hook_def ? hook_def.title : `(${limit.web_hook})`) );
+					}
+					if (limit.snapshot) {
+						items.push( "- **Generated server snapshot.**" );
+					}
+					if (limit.abort) {
+						items.push( "- **Aborted job.**" );
+					}
+					sub_action.summary = items.join("\n");
+					
+					self.runJobAction_email(job, sub_action, function() {
+						if (sub_action.code) {
+							limit.code = sub_action.code;
+							limit.description = sub_action.description;
+						}
+						sub_action.details = "**Result:** " + sub_action.description + "\n\n" + (sub_action.details || '');
+						if (sub_action.details) {
+							if (limit.details) limit.details += "\n";
+							limit.details += "### Email Details:\n\n" + sub_action.details.trim() + "\n";
+						}
+						callback();
+					});
+				},
+				function(callback) {
+					// web hook
+					if (!limit.web_hook) return callback();
+					var sub_action = Tools.mergeHashes(limit, { type: 'web_hook', template: 'job_limited', title: limit_def.title, msg: msg.replace(/\.$/, '') });
+					sub_action.condition = 'limit'; // for logging purposes
+					delete sub_action.details;
+					
+					// augment hook msg with additional actions taken
+					if (limit.abort) sub_action.msg += " (Job aborted)";
+					
+					self.runJobAction_web_hook(job, sub_action, function() {
+						if (sub_action.code) {
+							limit.code = sub_action.code;
+							limit.description = sub_action.description;
+						}
+						sub_action.details = "**Result:** " + sub_action.description + "\n\n" + (sub_action.details || '');
+						if (sub_action.details) {
+							if (limit.details) limit.details += "\n";
+							limit.details += "### Web Hook Details:\n\n" + sub_action.details.trim() + "\n";
+						}
+						callback();
+					});
+				},
+				function(callback) {
+					// snapshot
+					if (!limit.snapshot) return callback();
+					var sub_action = Tools.mergeHashes(limit, { type: 'snapshot', condition: 'limit' });
+					delete sub_action.details;
+					
+					self.runJobAction_snapshot(job, sub_action, function() {
+						if (sub_action.code) {
+							limit.code = sub_action.code;
+							limit.description = sub_action.description;
+						}
+						sub_action.details = "**Result:** " + sub_action.description + "\n\n" + (sub_action.details || '');
+						if (sub_action.details) {
+							if (limit.details) limit.details += "\n";
+							limit.details += "### Snapshot Details:\n\n" + sub_action.details.trim() + "\n";
+						}
+						callback();
+					});
+				}
+			],
+			function() {
+				// sub-actions complete
+				limit.elapsed_ms = Math.floor( performance.now() - perf_start ); // this is milliseconds
+				if (!limit.code) limit.description = "Successfully applied limits.";
+				
+				// let page watchers know
+				self.doPageBroadcast( 'Job?id=' + job.id, 'limit_triggered', { msg, limits: job.limits } );
+				
+				// now do abort if desired
+				if (limit.abort) {
+					if (limit.details) limit.details += "\n";
+					limit.details += "### Abort Details:\n\n- **Aborted job successfully.**\n"; 
+					
+					job.retry_ok = true; // allow retry even though we're aborting
+					self.abortJob(job, msg);
+				}
+			}
+		); // async.parallel
+	}
+	
+	checkJobStartLimits(job) {
+		// if job is suspended, skip this check (resuming from master recovery)
+		if (job.suspended) return true;
+		
+		// make sure job can run - if not, possibly queue up
+		var job_limit = Tools.findObject( job.limits, { type: 'job', enabled: true } );
+		
+		if (job_limit && job_limit.amount) {
+			// include jobs in "starting" state so concurrent start actions can't bypass limits
+			var jobs = this.findSimilarJobs(job, { state: 'active' }).concat(
+				this.findSimilarJobs(job, { state: 'starting' })
+			);
+			
+			if (jobs.length >= job_limit.amount) {
+				// concurrent job limit reached -- can we queue?
+				var queue_limit = Tools.findObject( job.limits, { type: 'queue', enabled: true } );
+				
+				if (queue_limit && queue_limit.amount) {
+					var queued = this.findSimilarJobs(job, { state: 'queued' });
+					
+					if (queued.length < queue_limit.amount) {
+						// room in queue, yay!
+						this.appendMetaLog(job, "Moving job state from {" + job.state + "} to {queued}");
+						job.state = 'queued';
+						job.position = queued.length + 1; // updated every time a job changes state
+						return false; // stop processing job launch
+					}
+					else {
+						// queue is full
+						this.appendMetaLog(job, "Active jobs are blocking: " + jobs.map( job => '#' + job.id ).join(', ') );
+						this.abortJob(job, "Maximum number of concurrent jobs for event has been reached, and the queue is maxed out.");
+						return false;
+					}
+				}
+				else {
+					// no can run
+					this.appendMetaLog(job, "Active jobs are blocking: " + jobs.map( job => '#' + job.id ).join(', ') );
+					this.abortJob(job, "Maximum number of concurrent jobs for event has been reached.");
+					return false;
+				}
+			} // limit reached
+		} // have limit
+		
+		// enforce max file limit here
+		var info = this.jobDetails[ job.id ];
+		var file_limit = Tools.findObject( job.limits, { type: 'file', enabled: true } );
+		if (file_limit && info.input && info.input.files && info.input.files.length) {
+			// file count limit
+			if (info.input.files.length > file_limit.amount) {
+				// Note: 0 means NO files allowed, not infinite
+				var num_exceeded = info.input.files.length - file_limit.amount;
+				this.appendMetaLog(job, `Pruned ${num_exceeded} files from input (file amount limit exceeded)`);
+				info.input.files.length = file_limit.amount;
+			}
+			
+			// total size limit
+			if (file_limit.size) {
+				var total_size = 0;
+				var size_exceeded = false;
+				var new_len = 0;
+				
+				info.input.files.forEach( function(file, idx) { 
+					total_size += file.size;
+					if (!size_exceeded && (total_size > file_limit.size)) {
+						size_exceeded = true;
+						new_len = idx;
+					}
+				} );
+				
+				if (size_exceeded) {
+					var num_exceeded = info.input.files.length - new_len;
+					this.appendMetaLog(job, `Pruned ${num_exceeded} files from input (file size limit exceeded)`);
+					info.input.files.length = new_len;
+				}
+			}
+			
+			// limit file extensions (prune files, do not abort)
+			if (file_limit.accept && file_limit.accept.length) {
+				var exts = file_limit.accept.trim().toLowerCase().split(/\,\s*/);
+				var ext_re = new RegExp( '(' + exts.map( Tools.escapeRegExp ).join('|') + ')$', 'i' );
+				var orig_len = info.input.files.length;
+				
+				info.input.files = info.input.files.filter( function(file) {
+					return !!file.filename.match(ext_re);
+				} );
+				
+				if (info.input.files.length < orig_len) {
+					var num_pruned = orig_len - info.input.files.length;
+					this.appendMetaLog(job, `Pruned ${num_pruned} files from input (file extension match)`);
+				}
+			}
+		} // file limiter
+		
+		// make sure event is still around and active
+		var event = Tools.findObject( this.events, { id: job.event } );
+		if (!event) {
+			this.abortJob(job, "Event was deleted: " + job.event);
+			return false;
+		}
+		if (!event.enabled && !job.test) {
+			this.abortJob(job, "Event was disabled: " + event.title);
+			return false;
+		}
+		
+		// job is go for active
+		return true;
+	}
+	
+	filterServerByAlerts(server_id) {
+		// filter server out of available set by which alerts are active (e.g. alert.limit_jobs)
+		var self = this;
+		
+		var server_alerts = Object.values(this.activeAlerts).filter( function(alert) {
+			if (alert.server != server_id) return false;
+			
+			var alert_def = Tools.findObject( self.alerts, { id: alert.alert } );
+			return (alert_def && alert_def.limit_jobs);
+		} );
+		
+		return !server_alerts.length;
+	}
+	
+	checkAvailableJobServer(job) {
+		// see if we have any available servers to run queued job
+		var self = this;
+		var server_ids = [];
+		
+		// skip this entirely for workflows
+		if (job.type == 'workflow') return true;
+		
+		// gather all server candidates (targets may be groups and/or servers)
+		(job.targets || []).forEach( function(target) {
+			if (self.servers[target]) {
+				server_ids.push(target);
+				return;
+			}
+			
+			var group = Tools.findObject( self.groups, { id: target } );
+			if (!group) return;
+			
+			Object.values(self.servers).forEach( function(server) {
+				if (server.groups.includes(group.id)) server_ids.push( server.id );
+			} );
+		} );
+		
+		// de-dupe
+		server_ids = [ ...new Set(server_ids) ];
+		
+		// filter by actual online servers at the present moment
+		server_ids = server_ids.filter( function(server_id) {
+			return self.servers[server_id] && self.servers[server_id].enabled;
+		} );
+		
+		// certain alerts being active may remove server from candidates
+		server_ids = server_ids.filter( this.filterServerByAlerts.bind(this) );
+		
+		return server_ids.length > 0;
+	}
+	
+	chooseJobServer(job) {
+		// pick a server for the job
+		var self = this;
+		var server_ids = [];
+		var server_id = '';
+		
+		// skip this entirely for workflows
+		if (job.type == 'workflow') return true;
+		
+		// skip this if job already has a server
+		if (job.server) return true;
+		
+		// gather all server candidates (targets may be groups and/or servers)
+		(job.targets || []).forEach( function(target) {
+			if (self.servers[target]) {
+				server_ids.push(target);
+				return;
+			}
+			
+			var group = Tools.findObject( self.groups, { id: target } );
+			if (!group) return;
+			
+			Object.values(self.servers).forEach( function(server) {
+				if (server.groups.includes(group.id)) server_ids.push( server.id );
+			} );
+		} );
+		
+		// de-dupe
+		server_ids = [ ...new Set(server_ids) ];
+		
+		// filter by actual online servers at the present moment
+		server_ids = server_ids.filter( function(server_id) {
+			return self.servers[server_id] && self.servers[server_id].enabled;
+		} );
+		
+		// certain alerts being active may remove server from candidates
+		server_ids = server_ids.filter( this.filterServerByAlerts.bind(this) );
+		
+		// apply target expression to further reduce server candidates
+		if (job.expression) try {
+			server_ids = server_ids.filter( function(server_id) {
+				return !!jexl.evalSync( job.expression, self.servers[server_id] );
+			} );
+		}
+		catch (err) {
+			this.logError('job', "Failed to evaluate job expression: " + job.expression + ": " + err);
+		}
+		
+		// do we have at least one online server?  If not, abort or queue the job
+		if (!server_ids.length) {
+			this.appendMetaLog(job, "No available servers matching targets");
+			
+			// no servers available, but we might be able to queue it
+			var queue_limit = Tools.findObject( job.limits, { type: 'queue', enabled: true } );
+			
+			if (queue_limit && queue_limit.amount) {
+				var queued = this.findActiveJobs({ event: job.event, state: 'queued' });
+				
+				if (queued.length < queue_limit.amount) {
+					// room in queue, yay!
+					this.appendMetaLog(job, "Moving job state from {" + job.state + "} to {queued}");
+					job.state = 'queued';
+					job.position = queued.length + 1;
+					return false; // stop processing job launch
+				}
+				else {
+					// queue is full
+					job.retry_ok = true; // allow retry even though we're aborting
+					this.abortJob(job, "No available servers matching targets, and the queue is full.");
+					return false;
+				}
+			}
+			else {
+				// no can run
+				job.retry_ok = true; // allow retry even though we're aborting
+				this.abortJob(job, "No available servers matching targets.");
+				return false;
+			}
+		} // no servers found
+		
+		// sort by hostname (for prefer_* algos)
+		server_ids.sort( function(a, b) {
+			return self.servers[a].hostname.localeCompare( self.servers[b].hostname );
+		} );
+		
+		switch (job.algo) {
+			case 'random':
+				server_id = Tools.randArray(server_ids);
+			break;
+			
+			case 'round_robin':
+				var robin = this.getState( 'events/' + job.event + '/robin' ) || 0;
+				server_id = server_ids[ robin % server_ids.length ];
+				robin = (robin + 1) % server_ids.length;
+				this.putState( 'events/' + job.event + '/robin', robin );
+			break;
+			
+			case 'prefer_first':
+				server_id = server_ids[0];
+			break;
+			
+			case 'prefer_last':
+				server_id = server_ids[ server_ids.length - 1 ];
+			break;
+			
+			case 'least_cpu':
+				Object.values(this.servers).forEach( function(server) {
+					if (!server_id || (server.info.cpu.avgLoad < self.servers[server_id].info.cpu.avgLoad)) server_id = server.id;
+				} );
+			break;
+			
+			case 'least_mem':
+				Object.values(this.servers).forEach( function(server) {
+					if (!server_id || (server.info.memory.active < self.servers[server_id].info.memory.active)) server_id = server.id;
+				} );
+			break;
+			
+			default:
+				// least monitor value
+				var mon_def = Tools.findObject( this.monitors, { id: job.algo.replace(/^monitor:/, '') } );
+				if (!mon_def) {
+					this.abortJob(job, "Unknown algorithm or monitor: " + job.algo);
+					return false;
+				}
+				
+				server_ids.forEach( function(id) {
+					var server = self.servers[id];
+					
+					if (!server_id) { 
+						server_id = server.id; 
+						return; 
+					}
+					
+					var cur_value = 0;
+					if (mon_def.delta) cur_value = server.info.deltas[mon_def.id] || 0;
+					else cur_value = server.info.monitors[mon_def.id] || 0;
+					
+					var prev_value = 0;
+					if (mon_def.delta) prev_value = self.servers[server_id].info.deltas[mon_def.id] || 0;
+					else prev_value = self.servers[server_id].info.monitors[mon_def.id] || 0;
+					
+					if (cur_value < prev_value) server_id = server.id;
+				} );
+			break;
+		} // switch algo
+		
+		var server = this.servers[server_id];
+		
+		this.logJob(8, "Chose server for job", {
+			server_id: server_id,
+			server_hostname: server.hostname,
+			job_id: job.id,
+			algo: job.algo
+		});
+		this.appendMetaLog(job, "Chosen server: " + (server.title || server.hostname) + " (" + job.algo + ")" );
+		
+		job.server = server_id;
+		job.groups = [ ...server.groups ];
+		return true;
+	}
+	
+	pruneProcsForTimeline(procs) {
+		// create slimmed-down version of procs for `second` timeline
+		// all we need is cpu, memRss, and command
+		var slims = {};
+		for (var pid in procs) {
+			var { cpu, memRss, command, disk, net } = procs[pid];
+			slims[pid] = { cpu, memRss, command, disk, net };
+		}
+		return slims;
+	}
+	
+	updateJobLate(updates) {
+		// perform late update on job that may have already completed
+		var self = this;
+		
+		this.logJob(5, "Attempting late update on completed job: " + updates.id, this.debugLevel(9) ? updates : false );
+		
+		this.unbase.update( 'jobs', updates.id, function(job) {
+			// perform updates here or bail out (inside unbase lock block)
+			if (job.code == 'abort') {
+				updates.code = 'warning';
+				updates.description = 'Job was aborted, but received late update after completion.';
+			}
+			
+			// append to job meta log
+			job.activity.push({ 
+				id: Tools.generateShortID('m'),
+				epoch: Tools.timeNow(), 
+				server: 'm:' + self.hostID,
+				msg: "WARNING: Received final job update post-completion."
+			});
+			updates.activity = job.activity;
+			
+			return updates;
+		}, 
+		function(err, job) {
+			// done with update (and unlocked)
+			if (err && (err === "ABORT")) return; // update was aborted and callback was handled
+			
+			if (err) {
+				self.logError('job', "Failed to update job late: " + updates.id + ": " + err);
+				return;
+			}
+			
+			// refresh anyone sitting on job details page
+			self.doPageBroadcast( 'Job?id=' + updates.id, 'job_completed', {} );
+		} ); // unbase.update
+	}
+	
+	updateJobData(data) {
+		// receive job update from satellite
+		// may contain multiple jobs, and apply updates as shallow merges to each
+		var self = this;
+		var now = Tools.timeNow();
+		
+		Object.values(data).forEach( function(updates) {
+			var job_id = updates.id;
+			updates.updated = now;
+			
+			// for sanity, make sure update doesn't contain certain special keys
+			delete updates.activity;
+			delete updates.log_file;
+			delete updates.log_file_size;
+			
+			// locate master job record
+			var job = self.activeJobs[job_id];
+			var info = self.jobDetails[job_id];
+			if (!job || !info) {
+				// can theoretically happen if a job timed out and the server came back
+				if (updates.state == 'complete') self.updateJobLate(updates);
+				else self.logJob(9, "Job not found, updates not applied: " + job_id, updates);
+				return;
+			}
+			if (job.state == 'complete') {
+				// should never happen, sanity check
+				self.logJob(9, "Job is already complete, updates not applied: " + job_id, updates);
+				return;
+			}
+			
+			// make sure job remote flag is true
+			// (may have been previously disabled by server removal)
+			job.remote = true;
+			
+			// handle sec timeline (procs)
+			if (updates.procs) {
+				if (!info.timelines) info.timelines = {};
+				if (!info.timelines.second) info.timelines.second = [];
+				if (!info.timelines.minute) info.timelines.minute = [];
+				
+				// keep up to 5 minutes of second data
+				info.timelines.second.push({ epoch: now, procs: self.pruneProcsForTimeline(updates.procs) });
+				if (info.timelines.second.length > 300) info.timelines.second.shift();
+				
+				// keep up to 24 hours of minute snaps
+				var cur_min_epoch = Tools.normalizeTime( now, { sec: 0 } );
+				
+				if (!info.timelines.minute.length || (info.timelines.minute[ info.timelines.minute.length - 1 ].epoch != cur_min_epoch)) {
+					var item = {
+						epoch: cur_min_epoch, 
+						procs: updates.procs || {}, 
+						conns: updates.conns || [] 
+					};
+					
+					info.timelines.minute.push(item);
+					if (info.timelines.minute.length > 1440) info.timelines.minute.shift();
+					
+					// update page users
+					self.doPageBroadcast( 'Job?id=' + job.id, 'minute_append', item );
+				} // minute
+			} // procs
+			
+			// make sure these are not mutated directly
+			delete updates.actions;
+			delete updates.limits;
+			delete updates.tags;
+			
+			// push system (for adding actions, limits, tags, etc.)
+			if (updates.push) {
+				for (var key in updates.push) {
+					if (!job[key]) job[key] = [];
+					if (Array.isArray(job[key])) job[key] = job[key].concat( updates.push[key] );
+				}
+				delete updates.push;
+			}
+			
+			// transmogrify markdown and text into html, then sanitize it
+			if (updates.markdown && updates.markdown.content) {
+				updates.html = updates.markdown;
+				updates.html.content = '<div class="markdown-body">' + marked.parse( updates.html.content, self.config.getPath('ui.marked_config') ) + '</div>';
+				delete updates.markdown;
+			}
+			else if (updates.text && updates.text.content) {
+				updates.html = updates.text;
+				updates.html.content = '<pre>' + updates.text.content.toString().replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+				delete updates.text;
+			}
+			
+			if (updates.html && updates.html.content) {
+				updates.html.content = sanitizeHtml( updates.html.content, self.config.getPath('ui.sanitize_html_config') );
+			}
+			
+			// if job sent data or files, move those to details right away, so they aren't synced to users (while job is still active)
+			if (updates.data) {
+				info.data = updates.data;
+				delete updates.data;
+			}
+			if (updates.files) {
+				info.files = updates.files;
+				delete updates.files;
+			}
+			
+			// bring in updates, shallow merge
+			Tools.mergeHashInto(job, updates);
+			
+			// if new job state is `complete` then it's done, and no more updates will come in
+			if (updates.state == 'complete') self.finishJob(job);
+		} ); // foreach job update
+	}
+	
+	abortJob(job, reason) {
+		// abort job
+		this.logJob(5, "Aborting Job: " + job.id + ": " + reason);
+		
+		if ((job.state == 'starting') || (job.state == 'complete')) {
+			// special case: abort during job actions -- set props which will be detected downstream
+			this.appendMetaLog(job, "Aborting Job: " + reason);
+			job.code = 'abort';
+			job.description = reason;
+			job.complete = true;
+			job.state = 'complete';
+			delete job.suspended; // resume if suspended
+			return;
+		}
+		
+		if (job.state == 'finishing') {
+			// if a job is finishing, just do the abort (cannot be interrupted remotely)
+			this.appendMetaLog(job, "Aborting Job: " + reason);
+			job.code = 'abort';
+			job.description = reason;
+			job.complete = true;
+			job.state = 'complete';
+			this.finishJob(job);
+			return;
+		}
+		
+		if (job.remote) {
+			// job is running remotely, so request an abort
+			var server = this.servers[ job.server ];
+			if (!server) {
+				// should never happen, mostly a sanity check
+				this.logError('job', "Job server not found: " + job.server, { job_id: job.id });
+				delete job.remote;
+				return this.abortJob(job, reason);
+			}
+			
+			var socket = this.sockets[ server.socket_id ];
+			if (!socket) {
+				// should never happen, mostly a sanity check
+				this.logError('job', "Server socket not found: " + server.socket_id, { job_id: job.id, server_id: job.server });
+				delete job.remote;
+				return this.abortJob(job, reason);
+			}
+			
+			socket.send('abort_job', {
+				id: job.id,
+				reason: reason
+			});
+			
+			// mark job as updated here to prevent dead_job_timeout bashing this
+			job.updated = Tools.timeNow();
+		}
+		else if (job.type == 'workflow') {
+			// special abort handler for workflows
+			this.abortWorkflow(job, reason);
+		}
+		else {
+			// no remote connection, just finish job now
+			this.appendMetaLog(job, "Aborting Job: " + reason);
+			
+			job.code = 'abort';
+			job.description = reason;
+			job.complete = true;
+			job.state = 'complete';
+			this.finishJob(job);
+		}
+	}
+	
+	getCompletedJobConditions(job) {
+		// get list of action conditions to fire all at once, but only if we did NOT retry
+		var conditions = [];
+		
+		if (!job.retried) {
+			// no retry, so add actions
+			conditions.push('complete');
+			
+			if (job.code) {
+				conditions.push('error');
+				if (job.code.toString().match(/^(warning|critical|abort)$/)) conditions.push(job.code);
+				else conditions.push('user');
+			}
+			else conditions.push('success');
+			
+			// custom actions for custom tags
+			if (job.tags) conditions = conditions.concat( job.tags.map( function(tag) { return 'tag:' + tag; } ) );
+		}
+		
+		return conditions;
+	}
+	
+	finishJob(job) {
+		// job is done done
+		var self = this;
+		
+		job.completed = Tools.timeNow();
+		job.elapsed = job.completed - job.started;
+		job.state = 'complete'; // prevent further updates
+		
+		// prune props
+		delete job.remote;
+		delete job.redraw;
+		delete job.status;
+		
+		// if job has output files, remove ephemeral flag
+		// note: retries will also have it removed, which is fine honestly
+		if (job.ephemeral && this.jobDetails[ job.id ] && this.jobDetails[ job.id ].files && this.jobDetails[ job.id ].files.length) {
+			this.appendMetaLog(job, "Removing ephemeral flag, as job has output files.");
+			delete job.ephemeral;
+		}
+		
+		// prep job log (user-generated) for upload
+		this.prepJobLog( job, function() {
+			// job code should be a number or a string
+			if (!job.code) job.code = 0;
+			else {
+				if ((typeof(job.code) != 'number') && (typeof(job.code) != 'string')) job.code = 'unknown';
+				else if (typeof(job.code) == 'string') job.code = job.code.replace(/\W+/g, '_').toLowerCase();
+			}
+			
+			// check for retry
+			if (job.code && ((job.code != 'abort') || job.retry_ok) && !job.retried) self.checkRetryJob(job);
+			
+			// get list of action conditions to fire (will be empty if job was retried)
+			var conditions = self.getCompletedJobConditions(job);
+			
+			self.runJobActions(job, conditions, function() {
+				// actions complete, now we can really complete the job
+				if (self.shut) return; // server shutting down
+				
+				// sanity removal
+				delete job.suspended;
+				
+				// pull out update_event from job, save for later
+				var update_event = job.update_event || false;
+				delete job.update_event;
+				
+				// pull out delete_event from job, save for later
+				var delete_event = job.delete_event || false;
+				delete job.delete_event;
+				
+				// ensure all tags are proper
+				if (!job.tags) job.tags = [];
+				job.tags = job.tags.filter( function(tag) {
+					var tag_def = Tools.findObject( self.tags, { id: tag } );
+					if (tag_def) return true;
+					
+					// try as tag title
+					tag_def = Tools.findObject( self.tags, { title: tag } );
+					if (tag_def) return true;
+					
+					self.appendMetaLog(job, "WARNING: Ignoring unknown tag: " + tag);
+					return false;
+				} );
+				
+				// add internal tag for success or error (for searches)
+				job.tags.push( job.code ? '_error' : '_success' );
+				job.tags.push( job.retried ? '_retried' : '_last' );
+				if (job.test) job.tags.push('_test');
+				
+				// dedupe tags array
+				job.tags = [...new Set(job.tags)];
+				
+				// appendMetaLog one final time, include code and description
+				if (job.code == 'abort') self.appendMetaLog(job, "Job aborted: " + job.description);
+				else if (job.code) self.appendMetaLog(job, "Job failed: " + job.description + " (" + job.code + ")");
+				else self.appendMetaLog(job, "Job completed successfully.");
+				
+				// mark tail of log
+				// self.appendMetaLog(job, "End of log");
+				
+				// merge details into combo job record
+				var combo_job = Tools.mergeHashes( job, self.jobDetails[ job.id ] || {} );
+				
+				// this is our final form
+				combo_job.final = true;
+				
+				// add disk and net averages
+				self.calcAvgDiskNet(combo_job);
+				
+				// remove junk (these live on in timelines.minute)
+				delete combo_job.procs;
+				delete combo_job.conns;
+				
+				// add special tag if job has input or output files
+				if ((combo_job.files && combo_job.files.length) || (combo_job.input && combo_job.input.files && combo_job.input.files.length)) {
+					combo_job.tags.push('_files');
+				}
+				
+				// update event state, for UI hints and such
+				if (!job.retried && (job.type != 'adhoc')) {
+					if (!self.state.events) self.state.events = {};
+					if (!self.state.events[job.event]) self.state.events[job.event] = {};
+					var event_state = self.state.events[job.event];
+					event_state.last_job = job.id;
+					event_state.last_code = job.code;
+					event_state.last_completed = Math.floor(job.completed);
+					event_state.total_elapsed = Tools.shortFloat( (event_state.total_elapsed || 0) + job.elapsed );
+					event_state.total_count = (event_state.total_count || 0) + 1;
+					self.state.dirty = true;
+				}
+				
+				// special case for adhoc: no event should be indexed in db
+				if (job.type == 'adhoc') combo_job.event = '';
+				else if (combo_job.event) {
+					// save title for UI hints (for showing old revisions in job search results)
+					var event = Tools.findObject( self.events, { id: combo_job.event } );
+					if (event) {
+						combo_job.event_title = event.title;
+						combo_job.event_revision = event.revision;
+					}
+				}
+				
+				// update daily stats
+				self.updateDailyStat( 'job_log_file_size', job.log_file_size || 0 );
+				self.updateDailyStat( 'job_elapsed', job.elapsed || 0 );
+				self.updateDailyStat( 'job_files', job.files ? job.files.length : 0 );
+				
+				// send updated stats over to connected users
+				self.doUserBroadcastAll( 'update', { stats: self.stats } );
+				
+				var finish = function() {
+					// truly finished and final
+					self.logJob(6, "Job is complete and final: " + job.id);
+					
+					// remove from active jobs
+					delete self.activeJobs[ job.id ];
+					delete self.jobDetails[ job.id ];
+					
+					// manage parent workflow here
+					// do this BEFORE the user broadcast, so users get the workflow update as well
+					// NOTE: This is a workflow SUB-JOB, not a workflow main job
+					if (job.workflow && job.workflow.job) self.finishWorkflowJob(combo_job);
+					
+					// notify all connected users that a job has changed
+					self.doUserBroadcastAll( 'status', { 
+						epoch: Tools.timeNow(),
+						activeJobs: self.getActiveJobs(),
+						jobsChanged: true,
+						state: Tools.copyHashRemoveKeys( self.state, { dirty: 1 } )
+					} );
+					self.masterSync();
+					
+					// and notify all job watchers that the job is fully complete
+					self.doPageBroadcast( 'Job?id=' + job.id, 'job_completed', {} );
+					
+					// emit event for job completion
+					self.emit('jobCompleted', combo_job);
+					
+					// monitor jobs here, as a queue slot may have freed up
+					setTimeout( function() { self.monitorJobs() }, 1 );
+				}; // finish
+				
+				if (job.ephemeral) {
+					// do not index in db, just call finish
+					finish();
+				}
+				else {
+					// upload job JSON data to storage and index it
+					self.unbase.insert( 'jobs', job.id, combo_job, function(err) {
+						if (err) self.logError('db', "Failed to index job: " + job.id + ": " + err);
+						else self.logJob(6, "Job is fully indexed in the DB: " + job.id);
+						finish();
+					} ); // unbase.insert
+				}
+				
+				// handle delete_event/update_event in parallel with unbase op
+				if (delete_event) {
+					var event = Tools.findObject( self.events, { id: job.event } );
+					if (!event) {
+						self.logError('event', "Event not found: " + job.event + ", cannot delete from job: " + job.id);
+						return;
+					}
+					
+					self.logJob(5, "Deleting event: " + event.id);
+					
+					self.storage.listFindDelete( 'global/events', { id: event.id }, function(err, event) {
+						if (err) {
+							self.logError('event', "Failed to delete event: " + err);
+							return;
+						}
+						
+						self.logJob(6, "Successfully deleted event: " + event.title, event);
+						self.logTransaction('event_delete', event.title, { event: event, keywords: [ event.id ], reason: 'job' });
+						
+						// cleanup (remove) event state
+						self.deleteState( 'events/' + event.id );
+						
+						// update cache in background
+						self.storage.listGet( 'global/events', 0, 0, function(err, items) {
+							if (err) {
+								// this should never fail, as it should already be cached
+								self.logError('storage', "Failed to cache events: " + err);
+								return;
+							}
+							self.events = items;
+							self.doUserBroadcastAll('update', { events: items });
+						});
+					} ); // listFindDelete
+				}
+				else if (update_event) {
+					var event = Tools.findObject( self.events, { id: job.event } );
+					if (!event) {
+						self.logError('event', "Event not found: " + job.event + ", cannot apply updates from job: " + job.id, update_event);
+						return;
+					}
+					
+					update_event.modified = job.completed;
+					update_event.revision = "+1";
+					self.logJob(5, "Updating event: " + event.id, update_event);
+					
+					self.storage.listFindUpdate( 'global/events', { id: event.id }, update_event, function(err, event) {
+						if (err) {
+							self.logError('event', "Failed to update event: " + err);
+							return;
+						}
+						
+						self.logJob(6, "Successfully updated event: " + event.title, update_event);
+						self.logTransaction('event_update', event.title, { event: event, keywords: [ event.id ], reason: 'job' });
+						
+						// update cache in background
+						self.storage.listGet( 'global/events', 0, 0, function(err, items) {
+							if (err) {
+								// this should never fail, as it should already be cached
+								self.logError('storage', "Failed to cache events: " + err);
+								return;
+							}
+							self.events = items;
+							self.doUserBroadcastAll('update', { events: items });
+						}); // listGet
+					} ); // listFindUpdate
+				} // update_event
+				
+				// optionally update server user data in parallel
+				if (job.serverData && Tools.isaHash(job.serverData) && job.server && self.servers[job.server]) {
+					self.logJob(5, "Updating server user data: " + job.server, job.serverData);
+					
+					var server = self.servers[job.server];
+					if (!server.userData) server.userData = {};
+					Tools.mergeHashInto( server.userData, job.serverData );
+					
+					self.unbase.put( 'servers', job.server, server );
+				} // serverData
+				
+				// optionally clear alert in parallel
+				if (job.clear_alert) {
+					self.clearActiveAlert( job.clear_alert );
+				} // clear_alert
+				
+			}); // runJobActions
+		}); // prepJobLog
+	}
+	
+	prepJobLog(job, callback) {
+		// see if we need to upload job log, or include it in jobDetails instead
+		var self = this;
+		var log_file = Path.resolve( Path.join( this.config.get('log_dir'), 'jobs', job.id + '.log' ) );
+		var max_inline_size = Tools.getBytesFromText( this.config.get('max_inline_job_log_size') || '1 MB' );
+		
+		// check for re-entry case (master recovery)
+		if (job.log_uploaded || this.jobDetails[ job.id ].output) {
+			this.logJob(9, "Log already prepped, skipping: " + job.id);
+			return callback();
+		}
+		
+		// skip this for workflows
+		if (job.type == 'workflow') {
+			job.log_file_size = 0;
+			return callback();
+		}
+		
+		fs.stat( log_file, function(err, stats) {
+			if (err) {
+				self.logJob(6, "No job log file found (may be totally normal): " + log_file + ": " + err);
+				job.log_file_size = 0;
+				
+				// if job failed with no output, set description as output
+				if (job.code && job.description) {
+					var desc = String(job.description) + "\n";
+					self.jobDetails[ job.id ].output = desc;
+					job.log_file_size = Buffer.byteLength(desc);
+				}
+				
+				return callback();
+			}
+			job.log_file_size = stats.size;
+			
+			if (!stats.size) {
+				// zero-byte log
+				fs.unlink( log_file, noop );
+				return callback();
+			}
+			
+			if (stats.size > max_inline_size) {
+				// job log is large, so upload as binary object in background
+				job.log_uploaded = true;
+				self.uploadJobLog(job);
+				return callback();
+			}
+			
+			// include as inline string in jobDetails
+			fs.readFile( log_file, 'utf8', function(err, contents) {
+				fs.unlink( log_file, noop );
+				if (err) self.jobDetails[ job.id ].output = '' + err;
+				else self.jobDetails[ job.id ].output = contents;
+				callback();
+			} ); // fs.readFile
+		} ); // fs.stat
+	}
+	
+	uploadJobLog(job) {
+		// upload job log in background (and compress w/gzip on the way)
+		var self = this;
+		var log_path = 'logs/jobs/' + job.id + '/log.txt.gz';
+		var log_file = Path.resolve( Path.join( this.config.get('log_dir'), 'jobs', job.id + '.log' ) );
+		
+		if (!log_file || !job.log_file_size) return; // no job log
+		if (job.ephemeral) return; // job will be deleted so skip log upload
+		
+		this.logJob(6, "Uploading job log: " + log_file + " to: " + log_path);
+		
+		var inp = fs.createReadStream( log_file );
+		inp.on('error', function(err) {
+			self.logError('fs', "Read stream failed: " + log_file + ": " + err);
+		});
+		
+		var gzip = zlib.createGzip( this.config.get('gzip_opts') || {} );
+		gzip.on('error', function(err) {
+			self.logError('fs', "Gzip stream failed: " + log_file + ": " + err);
+		});
+		
+		inp.pipe(gzip);
+		
+		this.storage.putStream( log_path, gzip, function(err) {
+			if (err) self.logError('storage', "Failed to upload job log: " + log_path + ": " + err);
+			else {
+				self.logJob(6, "Job log uploaded successfully: " + log_path);
+				
+				// notify connected users that job log is ready
+				// (use new system to see which users are on the job details page)
+				self.doPageBroadcast( 'Job?id=' + job.id, 'log_uploaded', {} );
+			}
+			
+			fs.unlink( log_file, function(err) {
+				if (err) self.logError('fs', "Failed to delete log file: " + log_file + ": " + err);
+			} );
+		} ); // storage.putStream
+	}
+	
+	checkRetryJob(job) {
+		// check if job can be retried
+		var self = this;
+		var retry_limit = Tools.findObject( job.limits, { type: 'retry', enabled: true } );
+		if (!retry_limit || !retry_limit.amount) return;
+		if (!job.retry_count) job.retry_count = 0;
+		
+		if (job.retry_count < retry_limit.amount) {
+			// yes launch retry now
+			var new_job = Tools.copyHash(job, true);
+			
+			// clense new job of previous running context
+			for (var key in new_job) {
+				if (!key.match(/^(type|event|category|plugin|targets|algo|workflow|input|params|parent|source|username|api_key|actions|limits|icon|label|test|retry_count|tags|invisible|ephemeral)$/)) delete new_job[key];
+			}
+			
+			// remove workflow running context (state, etc.)
+			if (new_job.workflow) {
+				delete new_job.workflow.state;
+				delete new_job.workflow.jobs;
+			}
+			
+			// increment retry counter, and add link to old job in new
+			new_job.retry_count++;
+			new_job.retry_prev = job.id;
+			
+			// optional retry delay
+			if (retry_limit.duration) {
+				new_job.state = 'retry_delay';
+				new_job.until = Tools.timeNow() + retry_limit.duration;
+			}
+			
+			this.appendMetaLog(job, "Launching retry #" + new_job.retry_count + " of " + retry_limit.amount );
+			this.logJob(6, "Launching job for retry (" + new_job.retry_count + " / " + retry_limit.amount + ")", retry_limit);
+			
+			this.launchJob(new_job, function(err, id) {
+				if (err) self.appendMetaLog(job, "Failed to launch event for retry: " + (err.message || err));
+				else {
+					self.appendMetaLog(job, "Launched job for retry: #" + id);
+					
+					// populate jobs array in current job
+					if (!job.jobs) job.jobs = [];
+					job.jobs.push({ id, reason: 'retry' });
+					
+					// add flag for workflow to sniff
+					job.retried = true;
+				}
+			});
+		}
+		else {
+			// out of retries
+			this.appendMetaLog(job, "Reached retry limit (" + retry_limit.amount + "), will not retry job.");
+		}
+		
+		delete job.retry_ok;
+	}
+	
+	calcAvgDiskNet(job) {
+		// calc avg disk and net using minute timeline
+		// disk is delta, net is only minute level
+		job.disk = { total: 0, count: 0 };
+		job.net = { total: 0, count: 0 };
+		
+		if (!job.timelines || !job.timelines.minute) return;
+		var last_min = null;
+		
+		job.timelines.minute.forEach( function(minute) {
+			// { epoch, conns, procs }
+			var conns = minute.conns || [];
+			conns.forEach( function(conn) { job.net.total += conn.delta || 0; } );
+			job.net.count++;
+			
+			if (last_min) {
+				// convert absolute disk counters to deltas at the process level
+				var procs = minute.procs || {};
+				var last_procs = last_min.procs || {};
+				
+				for (var pid in procs) {
+					var proc = procs[pid];
+					var last_proc = last_procs[pid] || null;
+					if (proc.disk && last_proc && last_proc.disk) {
+						job.disk.total += (proc.disk - last_proc.disk);
+					}
+				}
+				
+				job.disk.count += (minute.epoch - last_min.epoch);
+			} // last_min
+			
+			last_min = minute;
+		} ); // foreach minute
+	}
+	
+	rollbackJobStats(job) {
+		// if the job is from "today" (local server time) rollback affected stats
+		var self = this;
+		var dargs = Tools.getDateArgs( Tools.timeNow(true) );
+		var dargs_job = Tools.getDateArgs( job.completed );
+		
+		if (dargs.yyyy_mm_dd != dargs_job.yyyy_mm_dd) return; // not from today
+		
+		// get list of std conditions that fired when job completed
+		var conditions = this.getCompletedJobConditions(job);
+		
+		conditions.forEach( function(condition) {
+			if (!condition.match(/^\w+$/)) return; // only std conditions incr stats (skip `tag:` conditions)
+			
+			self.updateDailyStat( 'job_' + condition, -1 );
+			if (job.event) self.updateDailyCustomStat( `events.${job.event}.job_${condition}`, -1 );
+			if (job.server) self.updateDailyCustomStat( `servers.${job.server}.job_${condition}`, -1 );
+			if (job.category) self.updateDailyCustomStat( `categories.${job.category}.job_${condition}`, -1 );
+			if (job.plugin) self.updateDailyCustomStat( `plugins.${job.plugin}.job_${condition}`, -1 );
+			
+			// also give credit to all groups server is in
+			if (job.server && self.servers[job.server] && self.servers[job.server].groups) {
+				self.servers[job.server].groups.forEach( function(group_id) {
+					self.updateDailyCustomStat( `groups.${group_id}.job_${condition}`, -1 );
+				} );
+			}
+		} ); // foreach condition
+	}
+	
+	deleteJob(job, callback) {
+		// delete job record, log and any files
+		var self = this;
+		
+		// rollback affected stats
+		this.rollbackJobStats(job);
+		
+		async.series([
+			function(callback) {
+				// delete DB record first
+				self.unbase.delete( 'jobs', job.id, callback );
+			},
+			function(callback) {
+				// delete log file, if present
+				if (!job.log_file_size || job.output) return process.nextTick(callback);
+				var log_path = 'logs/jobs/' + job.id + '/log.txt.gz';
+				self.storage.delete( log_path, callback );
+			},
+			function(callback) {
+				// delete other files, if any
+				if (!job.files || !job.files.length) return process.nextTick(callback);
+				var keys = job.files.map( function(file) { return file.path; } );
+				self.storage.deleteMulti( keys, callback );
+			}
+		], callback ); // async.series
+	}
+	
+}; // class Jobs
+
+module.exports = Jobs;

@@ -1,0 +1,29 @@
+# aiops-bridge/requirements.txt
+# ─────────────────────────────────────────────────────────────
+# AIOps Bridge dependencies
+# Same OTel pattern as the learning project's other services.
+# ─────────────────────────────────────────────────────────────
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# HTTP client (async, with OTel auto-instrumentation support)
+httpx==0.28.1
+
+# OpenTelemetry API + SDK
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+
+# OTLP exporter over gRPC (same as other services in this stack)
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
+
+# Auto-instrumentation: FastAPI + httpx
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+
+# Logging bridge: stdlib → OTLP
+opentelemetry-exporter-otlp-proto-common==1.29.0
+
+# AI — Anthropic Claude (for RCA, playbook generation, PR descriptions)
+anthropic==0.40.0

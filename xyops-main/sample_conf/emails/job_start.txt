@@ -1,0 +1,18 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: ▶️ {{config.client.name}} Job Has Started: {{event.title}} -->
+<!-- Title: Job Started -->
+<!-- Button: View Details | {{links.job_details}} -->
+
+The following {{config.client.name}} job has started:
+
+- **Job ID:** `{{job.id}}`
+- **Event:** {{event.title}}
+- **Category:** {{category.title}}
+- **Plugin:** {{plugin.title}}
+- **Server:** {{nice_server}}
+
+### Links:
+- [Job Details]({{links.job_details}})
+
+### Event Notes:
+{{job.notes}}

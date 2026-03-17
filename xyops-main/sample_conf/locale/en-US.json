@@ -1,0 +1,12 @@
+{
+	"Strings": {
+		"UI": {
+			"Monitors": {
+				"fe_em_id": {
+					"title": "Monitor ID:",
+					"caption": "Enter a unique ID for the monitor (alphanumerics only).  Once created this cannot be changed."
+				}
+			}
+		}
+	}
+}

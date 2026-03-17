@@ -1,0 +1,30 @@
+# frontend-api/requirements.txt
+# ------------------------------
+# Pinned to exact versions for reproducibility.
+#
+# Package rationale (additions over backend)
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# opentelemetry-instrumentation-httpx
+#                             — auto-instruments every httpx request:
+#                               creates a CLIENT span and injects the
+#                               W3C `traceparent` header automatically.
+#                               This is what makes cross-service trace
+#                               propagation work without manual header code.
+
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+httpx==0.28.1          # async HTTP client used to call the backend
+
+# ── OpenTelemetry core ─────────────────────────────────────────────────────
+opentelemetry-sdk>=1.28.0,<2.0.0
+
+# ── Auto-instrumentation ───────────────────────────────────────────────────
+opentelemetry-instrumentation-fastapi>=0.49b0
+opentelemetry-instrumentation-httpx>=0.49b0   # context propagation to backend
+
+# ── OTLP exporters ─────────────────────────────────────────────────────────
+opentelemetry-exporter-otlp-proto-grpc>=1.28.0,<2.0.0
+opentelemetry-exporter-otlp-proto-http>=1.28.0,<2.0.0
+
+# ── gRPC runtime ───────────────────────────────────────────────────────────
+grpcio>=1.60.0

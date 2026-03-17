@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>xyOps</title>
+	<meta name="description" content="A complete task scheduler and server monitoring system.">
+	<meta name="author" content="Joseph Huckaby / PixlCore">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="mobile-web-app-capable" content="yes">
+	<link rel="shortcut icon" href="/favicon.ico">
+	<link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png">
+	<link rel="icon" type="image/png" sizes="256x256" href="/images/logo-256.png">
+	<link rel="icon" type="image/png" sizes="96x96" href="/images/favicon-96x96.png">
+	<link rel="manifest" href="/manifest.webmanifest">
+	<meta name="theme-color" content="#3791F5">
+	
+	<!-- BUILD: COMBINE_STYLE_START -->
+	<link rel="stylesheet" href="/css/normalize.css">
+	<link rel="stylesheet" href="/css/base.css">
+	<link rel="stylesheet" href="/css/style.css">
+	<link rel="stylesheet" href="/css/responsive.css">
+	<link rel="stylesheet" href="/css/search.css">
+	<link rel="stylesheet" href="/css/accessibility.css">
+	<link rel="stylesheet" href="/css/workflow.css">
+	<link rel="stylesheet" href="/css/tickets.css">
+	<link rel="stylesheet" href="/css/materialdesignicons.min.css">
+	<link rel="stylesheet" href="/codemirror/lib/codemirror.css">
+	<link rel="stylesheet" href="/codemirror/addon/scroll/simplescrollbars.css">
+	<link rel="stylesheet" href="/css/cm-one-light.css">
+	<link rel="stylesheet" href="/css/cm-one-dark.css">
+	<!-- BUILD: COMBINE_STYLE_END -->
+</head>
+
+<body>
+	<div id="filter_overlay"></div>
+	<div id="toaster"></div>
+	
+	<div class="sidebar">
+		<div class="title"></div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-home">&nbsp;</i>Main</div>
+		<div class="section">
+			<a href="#Dashboard" id="tab_Dashboard" class="section_item"><i class="icon mdi mdi-monitor-dashboard">&nbsp;</i>Dashboard</a>
+		</div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-account-search-outline">&nbsp;</i>Job Searches</div>
+		<div id="d_section_my_job_searches" class="section"></div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-text-box-search-outline">&nbsp;</i>Ticket Searches</div>
+		<div id="d_section_my_ticket_searches" class="section"></div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-hand-pointing-right">&nbsp;</i>Shortcuts</div>
+		<div class="section">
+			<a href="#Tickets?sub=new" id="tab_NewTicket" class="section_item"><i class="icon mdi mdi-text-box-plus-outline">&nbsp;</i>New Ticket...</a>
+			<a href="#Events?sub=new" id="tab_NewEvent" class="section_item"><i class="icon mdi mdi-calendar-edit-outline">&nbsp;</i>New Event...</a>
+			<a href="#Workflows?sub=new" id="tab_NewWorkflow" class="section_item"><i class="icon mdi mdi-clipboard-edit-outline">&nbsp;</i>New Workflow...</a>
+			<a href="#Servers?add=1" id="tab_NewServer" class="section_item"><i class="icon mdi mdi-server-plus-outline">&nbsp;</i>New Server...</a>
+		</div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-calendar-multiple">&nbsp;</i>Scheduler</div>
+		<div class="section">
+			<a href="#Events" id="tab_Events" class="section_item"><i class="icon mdi mdi-calendar-clock">&nbsp;</i>Events</a>
+			<a href="#Events?plugin=_workflow" id="tab_Workflows" class="section_item"><i class="icon mdi mdi-clipboard-flow-outline">&nbsp;</i>Workflows</a>
+			<a href="#Categories" id="tab_Categories" class="section_item"><i class="icon mdi mdi-folder-multiple-outline">&nbsp;</i>Categories</a>
+			<a href="#Buckets" id="tab_Buckets" class="section_item"><i class="icon mdi mdi-pail-outline">&nbsp;</i>Buckets</a>
+			<a href="#Tags" id="tab_Tags" class="section_item"><i class="icon mdi mdi-tag-multiple-outline">&nbsp;</i>Tags</a>
+		</div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-camera-outline">&nbsp;</i>Monitoring</div>
+		<div class="section">
+			<a href="#Alerts" id="tab_Alerts" class="section_item"><i class="icon mdi mdi-car-brake-alert">&nbsp;</i>Alerts</a>
+			<a href="#Servers" id="tab_Servers" class="section_item"><i class="icon mdi mdi-server">&nbsp;</i>Servers</a>
+			<a href="#Groups" id="tab_Groups" class="section_item"><i class="icon mdi mdi-lan">&nbsp;</i>Groups</a>
+			<a href="#Snapshots" id="tab_Snapshots" class="section_item"><i class="icon mdi mdi-monitor-multiple">&nbsp;</i>Snapshots</a>
+		</div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-cogs">&nbsp;</i>Settings</div>
+		<div class="section">
+			<a href="#MyAccount" id="tab_MyAccount" class="section_item"><i class="icon mdi mdi-account">&nbsp;</i>My Account</a>
+			<a href="#MySettings" id="tab_MySettings" class="section_item"><i class="icon mdi mdi-tune-vertical-variant">&nbsp;</i>Preferences</a>
+			<a href="#MySecurity" id="tab_MySecurity" class="section_item"><i class="icon mdi mdi-shield-account">&nbsp;</i>Security Log</a>
+		</div>
+		
+		<div id="d_sidebar_admin_group" style="margin-top:10px">
+			<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-lock">&nbsp;</i>Admin</div>
+			<div class="section">
+				<a href="#ActivityLog" id="tab_ActivityLog" class="section_item"><i class="icon mdi mdi-script-text-outline">&nbsp;</i>Activity Log</a>
+				<a href="#AlertSetup" id="tab_AlertSetup" class="section_item"><i class="icon mdi mdi-bell-ring-outline">&nbsp;</i>Alert Setup</a>
+				<a href="#APIKeys" id="tab_APIKeys" class="section_item"><i class="icon mdi mdi-key-chain-variant">&nbsp;</i>API Keys</a>
+				<a href="#Channels" id="tab_Channels" class="section_item"><i class="icon mdi mdi-bullhorn-outline">&nbsp;</i>Channels</a>
+				<a href="#Conductors" id="tab_Conductors" class="section_item"><i class="icon mdi mdi-database">&nbsp;</i>Conductors</a>
+				<a href="#Config" id="tab_Config" class="section_item"><i class="icon mdi mdi-cog">&nbsp;</i>Configuration</a>
+				<a href="#LogViewer" id="tab_LogViewer" class="section_item"><i class="icon mdi mdi-script-text-outline">&nbsp;</i>Log Viewer</a>
+				<a href="#Marketplace" id="tab_Marketplace" class="section_item"><i class="icon mdi mdi-cart-outline">&nbsp;</i>Marketplace</a>
+				<a href="#Monitors" id="tab_Monitors" class="section_item"><i class="icon mdi mdi-chart-areaspline">&nbsp;</i>Monitors</a>
+				<a href="#Plugins" id="tab_Plugins" class="section_item"><i class="icon mdi mdi-power-plug-outline">&nbsp;</i>Plugins</a>
+				<a href="#Secrets" id="tab_Secrets" class="section_item"><i class="icon mdi mdi-shield-lock-outline">&nbsp;</i>Secrets</a>
+				<a href="#System" id="tab_System" class="section_item"><i class="icon mdi mdi-desktop-classic">&nbsp;</i>System</a>
+				<a href="#Users" id="tab_Users" class="section_item"><i class="icon mdi mdi-account">&nbsp;</i>User Accounts</a>
+				<a href="#Roles" id="tab_Roles" class="section_item"><i class="icon mdi mdi-account-group">&nbsp;</i>User Roles</a>
+				<a href="#WebHooks" id="tab_WebHooks" class="section_item"><i class="icon mdi mdi-webhook">&nbsp;</i>Web Hooks</a>
+			</div>
+		</div>
+		
+		<div class="section_title"><i class="ctrl mdi mdi-chevron-down"></i><i class="icon mdi mdi-help-network-outline">&nbsp;</i>Help</div>
+		<div class="section">
+			<a href="#Docs" id="tab_Docs" class="section_item"><i class="icon mdi mdi-file-document-multiple-outline">&nbsp;</i>Documentation</a>
+			<a href="#Docs/support" id="tab_Support" class="section_item"><i class="icon mdi mdi-lifebuoy">&nbsp;</i>Support</a>
+		</div>
+		
+		<div id="tab_Job" style="display:none"></div>
+		<div id="tab_Tickets" style="display:none"></div>
+		<div id="tab_Search" style="display:none"></div>
+		<div id="tab_ServerHist" style="display:none"></div>
+		<div id="tab_GroupHist" style="display:none"></div>
+		<div id="tab_Login" style="display:none"></div>
+		<div id="tab_Magic" style="display:none"></div>
+		
+		<div class="sidebar_foot_pad"></div>
+	</div>
+	
+	<div id="d_sidebar_toggle"><i class="mdi mdi-menu-open"></i></div>
+	
+	<div class="header">
+		<div id="d_logo_overlay" onClick="Nav.go('Dashboard')"></div>
+		<div id="d_header_user_container" class="right">
+			
+		</div>
+		<div class="header_title"></div>
+		<div class="clear"></div>
+	</div>
+	
+	<div class="main">
+	</div>
+	
+	<!-- Footer -->
+	<div class="footer" id="d_footer">
+		<div id="d_footer_copyright" class="left"></div>
+		<div id="d_footer_version" class="right"></div>
+		<div class="clear"></div>
+	</div>
+	
+	<!-- BUILD: COMBINE_SCRIPT_START -->
+	<script src="/js/external/jquery.min.js"></script>
+	<script src="/codemirror/lib/codemirror.js"></script>
+	<script src="/codemirror/addon/mode/overlay.js"></script>
+	<script src="/codemirror/addon/runmode/runmode.js"></script>
+	<script src="/codemirror/addon/scroll/simplescrollbars.js"></script>
+	<script src="/codemirror/mode/markdown/markdown.js"></script>
+	<script src="/codemirror/mode/gfm/gfm.js"></script>
+	<script src="/codemirror/mode/javascript/javascript.js"></script>
+	<script src="/codemirror/mode/htmlmixed/htmlmixed.js"></script>
+	<script src="/codemirror/mode/clike/clike.js"></script>
+	<script src="/codemirror/mode/meta.js"></script>
+	<script src="/codemirror/mode/shell/shell.js"></script>
+	<script src="/codemirror/mode/go/go.js"></script>
+	<script src="/codemirror/mode/perl/perl.js"></script>
+	<script src="/codemirror/mode/php/php.js"></script>
+	<script src="/codemirror/mode/python/python.js"></script>
+	<script src="/codemirror/mode/xml/xml.js"></script>
+	<script src="/codemirror/mode/powershell/powershell.js"></script>
+	
+	<script src="/highlight/highlight.min.js"></script>
+	<script src="/highlight/languages/http.min.js"></script>
+	<script src="/highlight/languages/powershell.min.js"></script>
+	
+	<script src="/js/external/chart.min.js"></script>
+	<script src="/js/external/zeroupload.min.js"></script>
+	<script src="/js/external/marked.min.js"></script>
+	<script src="/js/external/diff.js"></script>
+	<script src="/js/external/ansi_up.js"></script>
+	<script src="/js/external/confetti.browser.js"></script>
+	<script src="/js/external/icon-font-names.js"></script>
+	<script src="/js/common/unscroll.min.js"></script>
+	<script src="/js/common/misc.js"></script>
+	<script src="/js/common/tools.js"></script>
+	<script src="/js/common/datetime.js"></script>
+	<script src="/js/common/page.js"></script>
+	<script src="/js/common/dialog.js"></script>
+	<script src="/js/common/popover.js"></script>
+	<script src="/js/common/select.js"></script>
+	<script src="/js/common/base.js"></script>
+	<script src="/js/app.js"></script>
+	<script src="/js/comm.js"></script>
+	<script src="/js/utils.js"></script>
+	<script src="/js/pages/Base.class.js"></script>
+	<script src="/js/pages/PageUtils.class.js"></script>
+	<script src="/js/pages/Dashboard.class.js"></script>
+	<script src="/js/pages/Docs.class.js"></script>
+	<script src="/js/pages/Login.class.js"></script>
+	<script src="/js/pages/Events.class.js"></script>
+	<script src="/js/pages/Workflows.class.js"></script>
+	<script src="/js/pages/Job.class.js"></script>
+	<script src="/js/pages/Search.class.js"></script>
+	<script src="/js/pages/ServerUtils.class.js"></script>
+	<script src="/js/pages/ServerHist.class.js"></script>
+	<script src="/js/pages/GroupHist.class.js"></script>
+	<script src="/js/pages/Servers.class.js"></script>
+	<script src="/js/pages/Snapshots.class.js"></script>
+	<script src="/js/pages/Alerts.class.js"></script>
+	<script src="/js/pages/Tickets.class.js"></script>
+	<script src="/js/pages/Magic.class.js"></script>
+	<script src="/js/pages/user/MyAccount.class.js"></script>
+	<script src="/js/pages/user/MySettings.class.js"></script>
+	<script src="/js/pages/user/MySecurity.class.js"></script>
+	<script src="/js/pages/admin/Users.class.js"></script>
+	<script src="/js/pages/admin/Activity.class.js"></script>
+	<script src="/js/pages/admin/APIKeys.class.js"></script>
+	<script src="/js/pages/admin/Groups.class.js"></script>
+	<script src="/js/pages/admin/Monitors.class.js"></script>
+	<script src="/js/pages/admin/AlertSetup.class.js"></script>
+	<script src="/js/pages/admin/Categories.class.js"></script>
+	<script src="/js/pages/admin/Channels.class.js"></script>
+	<script src="/js/pages/admin/WebHooks.class.js"></script>
+	<script src="/js/pages/admin/Buckets.class.js"></script>
+	<script src="/js/pages/admin/Secrets.class.js"></script>
+	<script src="/js/pages/admin/Plugins.class.js"></script>
+	<script src="/js/pages/admin/Tags.class.js"></script>
+	<script src="/js/pages/admin/Conductors.class.js"></script>
+	<script src="/js/pages/admin/Config.class.js"></script>
+	<script src="/js/pages/admin/LogViewer.class.js"></script>
+	<script src="/js/pages/admin/System.class.js"></script>
+	<script src="/js/pages/admin/Roles.class.js"></script>
+	<script src="/js/pages/admin/Marketplace.class.js"></script>
+	<!-- BUILD: COMBINE_SCRIPT_END -->
+	
+	<script src="/api/app/config"></script>
+
+</body>
+</html>

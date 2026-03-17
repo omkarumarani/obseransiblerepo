@@ -1,0 +1,209 @@
+# loki/loki-config.yaml
+# ---------------------
+# Grafana Loki configuration for the Observability Learning project.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT LOKI DOES
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Loki is a log aggregation system.  It stores log lines alongside a small
+# set of indexed labels and lets you query them with LogQL.
+#
+# The key design philosophy — "like Prometheus, but for logs":
+#   Prometheus stores metrics indexed by labels (not by content).
+#   Loki stores logs indexed by labels (not by content).
+#
+# This makes Loki extremely storage-efficient.  It does NOT build a full-text
+# index over every word in every log line.  Instead it only indexes the labels
+# you define (e.g. service_name, deployment_environment).  The log line content
+# is stored compressed and is searched with a streaming grep when you query.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW LABELS WORK IN LOKI
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A "stream" is a sequence of log lines that all share the same label set.
+# Example streams in this project:
+#
+#   {service_name="frontend-api", deployment_environment="local"}  → stream A
+#   {service_name="backend-api",  deployment_environment="local"}  → stream B
+#
+# When you write a LogQL query you first select a stream:
+#   {service_name="frontend-api"}
+#
+# Then optionally filter log lines within that stream:
+#   {service_name="frontend-api"} |= "ERROR"
+#   {service_name="frontend-api"} | logfmt | severity = "ERROR"
+#
+# HIGH-CARDINALITY LABEL DANGER (same as Prometheus)
+# ───────────────────────────────────────────────────
+# Never use trace_id, request_id, user_id, or IP addresses as Loki labels.
+# Each unique label value creates a new stream.  A million unique trace IDs
+# = a million streams = OOM.  Use labels only for low-cardinality dimensions
+# like service name, environment, log level.
+#
+# trace_id and span_id belong IN the log line, not as labels.
+# You can then use LogQL to filter by them:
+#   {service_name="frontend-api"} |= "trace_id=<your_id>"
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# INGESTION PATH IN THIS PROJECT
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   frontend-api / backend-api
+#       Python stdlib logging
+#       → OTel LoggingHandler (bridges to LoggerProvider)
+#       → OTLP/gRPC → otel-collector :4317
+#       → logs pipeline (memory_limiter → resource → batch)
+#       → loki exporter
+#       → POST http://loki:3100/loki/api/v1/push
+#       → Loki ingester → WAL → chunk storage
+#       → /var/loki (tempo-data volume on Docker host)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPLOYMENT MODE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Loki supports two deployment targets:
+#   "all"          — monolithic, all components in one process.  Used here.
+#   microservices  — each component (ingester, querier, etc.) runs separately.
+#
+# Monolithic mode is perfect for a local learning lab: one process, one config,
+# easy to restart and debug.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTH
+# Loki supports multi-tenancy via an X-Scope-OrgID header.  With
+# auth_enabled: false, all logs go into a single default tenant.
+# This is correct for a local lab — no credentials to manage.
+# ─────────────────────────────────────────────────────────────────────────────
+auth_enabled: false
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVER
+# The HTTP server handles the Loki push API, query API, and health check.
+# The gRPC server is used for internal component-to-component communication
+# in monolithic mode (e.g. distributor → ingester within the same process).
+# ─────────────────────────────────────────────────────────────────────────────
+server:
+  http_listen_port: 3100    # Push API, query API, /ready health check
+  grpc_listen_port: 9096    # Internal gRPC — not accessed externally
+  log_level: info           # Loki's own log level: debug | info | warn | error
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMMON
+# The `common` block provides a single place to configure shared settings.
+# Individual components inherit these values.  For a local lab this avoids
+# repeating the storage path and ring settings in every component.
+# ─────────────────────────────────────────────────────────────────────────────
+common:
+  # instance_addr is this node's IP as seen by other Loki nodes.
+  # In monolithic mode there is only one node, so 127.0.0.1 is correct.
+  instance_addr: 127.0.0.1
+
+  # All component-specific paths are relative to path_prefix.
+  path_prefix: /var/loki
+
+  # Storage backend — local filesystem, mapped to the loki-data Docker volume.
+  storage:
+    filesystem:
+      chunks_directory: /var/loki/chunks
+      rules_directory:  /var/loki/rules
+
+  # Replication factor 1 = no replication.  Correct for a single-node setup.
+  # In production this is typically 3 for high availability.
+  replication_factor: 1
+
+  # The ring is how Loki nodes discover each other and distribute work.
+  # In monolithic mode with one node, inmemory is the right choice.
+  # In production you would use consul, etcd, or memberlist.
+  ring:
+    kvstore:
+      store: inmemory
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCHEMA CONFIG
+# The schema config tells Loki which storage engine and index format to use
+# for logs that arrived after a given date.
+#
+# store: tsdb
+#   TSDB (Time Series Database format) is the current recommended index store.
+#   It replaced BoltDB Shipper in Loki 2.8 and is used here.
+#
+# object_store: filesystem
+#   Stores log chunks on the local filesystem (via the common.storage config).
+#
+# schema: v13
+#   The current schema version.  It is safe to start with v13 for new setups.
+#
+# index.period: 24h
+#   A new index file is created every 24 hours.  Each period covers one day
+#   of logs.  This is the recommended value for all TSDB-based setups.
+# ─────────────────────────────────────────────────────────────────────────────
+schema_config:
+  configs:
+    - from: 2020-10-24            # schema applies to logs from this date onward
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUERY RANGE
+# Controls how Loki handles range queries (queries over a time window).
+#
+# results_cache.cache.embedded_cache
+#   An in-memory LRU cache for query results.  Avoids re-scanning chunks
+#   for repeated queries over the same time range.  100 MB is generous
+#   for a local lab.
+# ─────────────────────────────────────────────────────────────────────────────
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LIMITS CONFIG
+# Per-tenant (or global) rate limits and retention settings.
+#
+# retention_period: 24h
+#   Delete log chunks older than 24 hours.  For a learning lab this keeps
+#   disk usage small without losing today's data between restarts.
+#   Set to 0 to disable retention (keep everything until disk is full).
+#
+# Note: retention requires the compactor to be running, which it is in
+# monolithic mode.  The compactor periodically scans for expired chunks
+# and removes them.
+# ─────────────────────────────────────────────────────────────────────────────
+limits_config:
+  retention_period: 24h
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPACTOR
+# The compactor merges small index files and enforces retention.
+# working_directory: where the compactor writes temporary merge files.
+# ─────────────────────────────────────────────────────────────────────────────
+compactor:
+  working_directory: /var/loki/compactor
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ANALYTICS
+# Loki phones home to report anonymous usage statistics by default.
+# Disabling it keeps the local lab self-contained.
+# ─────────────────────────────────────────────────────────────────────────────
+analytics:
+  reporting_enabled: false

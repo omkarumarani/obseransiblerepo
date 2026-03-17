@@ -1,0 +1,35 @@
+{
+	"foreground": true,
+	"hostname": "localhost",
+	"masters": false,
+	
+	"base_app_url": "http://localhost:6622",
+	"email_from": "",
+	"secret_key": "UNIT_TEST",
+	"log_dir": "test/logs",
+	"temp_dir": "test/temp",
+	"pid_file": "test/logs/unit.pid",
+	"debug_level": 9,
+	"maintenance": "99:99",
+	
+	"ping_freq_sec": 10,
+	"ping_timeout_sec": 20,
+	
+	"max_jobs_per_min": 1000,
+	
+	"tickets.email_enabled": false,
+	"airgap.enabled": false,
+	
+	"multi.master_list_file": "test/data/masters.json",
+	
+	"satellite.config.port": 6622,
+	
+	"Storage.trans_dir": "test/data/_transactions",
+	"Storage.Filesystem.base_dir": "test/data",
+	"Storage.SQLite.base_dir": "test/data",
+	
+	"WebServer.http_port": 6622,
+	"WebServer.https_port": 6623,
+	
+	"User.use_csrf": false
+}

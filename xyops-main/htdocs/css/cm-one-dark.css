@@ -1,0 +1,74 @@
+/* Atom One Dark theme for CodeMirror v5 */
+/* Based on Atom One Dark Highlight.js and VS Code One Dark theme */
+
+.cm-s-one-dark.CodeMirror {
+  background: #282c34;
+  color: #abb2bf;
+}
+
+.cm-s-one-dark div.CodeMirror-selected { background: #484e5b; }
+.cm-s-one-dark .CodeMirror-line::selection,
+.cm-s-one-dark .CodeMirror-line > span::selection,
+.cm-s-one-dark .CodeMirror-line > span > span::selection { background: #484e5b; }
+.cm-s-one-dark .CodeMirror-line::-moz-selection,
+.cm-s-one-dark .CodeMirror-line > span::-moz-selection,
+.cm-s-one-dark .CodeMirror-line > span > span::-moz-selection { background: #484e5b; }
+
+.cm-s-one-dark .CodeMirror-gutters {
+  background: #21252b;
+  border-right: 1px solid #181A1F;
+}
+.cm-s-one-dark .CodeMirror-guttermarker { color: #5C6370; }
+.cm-s-one-dark .CodeMirror-linenumber { color: #5b6479; }
+
+.cm-s-one-dark .CodeMirror-cursor { border-left: 1px solid #f8f8f0; }
+
+.cm-s-one-dark .CodeMirror-activeline-background { background: #383E4A; }
+/* Matching bracket highlight */
+.cm-s-one-dark .CodeMirror-matchingbracket {
+  outline: solid 1px rgba(171, 178, 191, .25);
+  color: #ABB2BF !important;
+}
+
+/* Syntax highlight */
+.cm-s-one-dark span.cm-comment,
+.cm-s-one-dark span.cm-quote { color: #7b8596; font-style: italic; }
+
+.cm-s-one-dark span.cm-keyword { color: #c678dd; }
+
+.cm-s-one-dark span.cm-atom,
+.cm-s-one-dark span.cm-operator { color: #56b6c2; }
+
+.cm-s-one-dark span.cm-number,
+.cm-s-one-dark span.cm-variable,
+.cm-s-one-dark span.cm-type { color: #d19a66; }
+
+.cm-s-one-dark span.cm-def,
+.cm-s-one-dark span.cm-error { color: #e06c75; }
+
+.cm-s-one-dark span.cm-string,
+.cm-s-one-dark span.cm-string-2,
+.cm-s-one-dark span.cm-attribute { color: #98c379; }
+
+.cm-s-one-dark span.cm-meta,
+.cm-s-one-dark span.cm-link { color: #61aeee; }
+
+.cm-s-one-dark span.cm-builtin,
+.cm-s-one-dark span.cm-qualifier,
+.cm-s-one-dark span.cm-property { color: #61aeee; }
+
+.cm-s-one-dark span.cm-bracket { color: #abb2bf; }
+
+.cm-s-one-dark span.cm-header { color: #61aeee; font-weight: bold; }
+
+.cm-s-one-dark span.cm-strong { font-weight: bold; }
+.cm-s-one-dark span.cm-em { font-style: italic; }
+
+.cm-s-one-dark span.cm-link:visited { color: #61aeee; }
+
+.cm-s-one-dark span.cm-variable-3 {
+  color: #d19a66;
+}
+.cm-s-one-dark span.cm-variable-2 {
+  color: #6abe81;
+}

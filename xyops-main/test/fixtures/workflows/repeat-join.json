@@ -1,0 +1,171 @@
+{
+	"type": "xypdf",
+	"description": "xyOps Portable Data Object",
+	"version": "1.0",
+	"items": [
+		{
+			"type": "event",
+			"data": {
+				"id": "emhuzho48zv",
+				"title": "Repeat and Join",
+				"enabled": true,
+				"targets": [],
+				"params": {},
+				"fields": [],
+				"triggers": [
+					{
+						"enabled": true,
+						"type": "manual",
+						"id": "n2jdvlh6"
+					}
+				],
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"notes": "",
+				"workflow": {
+					"nodes": [
+						{
+							"id": "n2jdvlh6",
+							"type": "trigger",
+							"x": 124,
+							"y": 339
+						},
+						{
+							"id": "nen194g3",
+							"type": "controller",
+							"data": {
+								"controller": "repeat",
+								"repeat": 5,
+								"continue": 100
+							},
+							"x": 238.5,
+							"y": 269.5
+						},
+						{
+							"id": "n5r4k75x",
+							"type": "job",
+							"data": {
+								"params": {
+									"duration": "1",
+									"action": "Success",
+									"custom": "",
+									"burn": false,
+									"network": false,
+									"upload": true
+								},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "Generate Data",
+								"category": "general",
+								"plugin": "testplug",
+								"tags": []
+							},
+							"x": 425,
+							"y": 171
+						},
+						{
+							"id": "nef5xu47",
+							"type": "limit",
+							"data": {
+								"type": "job",
+								"enabled": true,
+								"amount": 5
+							},
+							"x": 461,
+							"y": 608
+						},
+						{
+							"id": "n7qp8fvc",
+							"type": "controller",
+							"data": {
+								"controller": "join"
+							},
+							"x": 806,
+							"y": 220
+						},
+						{
+							"id": "nbzpuk59",
+							"type": "job",
+							"data": {
+								"params": {
+									"duration": "1",
+									"action": "Success",
+									"custom": "",
+									"burn": false,
+									"network": false,
+									"upload": false
+								},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "Finalize Data",
+								"category": "general",
+								"plugin": "testplug",
+								"tags": []
+							},
+							"x": 985,
+							"y": 206
+						}
+					],
+					"connections": [
+						{
+							"id": "cpbjvpbq",
+							"source": "n2jdvlh6",
+							"dest": "nen194g3"
+						},
+						{
+							"id": "cfdpdlqx",
+							"source": "nen194g3",
+							"dest": "n5r4k75x"
+						},
+						{
+							"id": "cxhv71cc",
+							"source": "n5r4k75x",
+							"dest": "nef5xu47"
+						},
+						{
+							"id": "c1uuvpzl",
+							"source": "n5r4k75x",
+							"dest": "n7qp8fvc",
+							"condition": "continue"
+						},
+						{
+							"id": "cbtb2qei",
+							"source": "n7qp8fvc",
+							"dest": "nbzpuk59"
+						}
+					]
+				},
+				"category": "general",
+				"type": "workflow",
+				"icon": "",
+				"tags": [],
+				"plugin": "_workflow",
+				"username": "admin",
+				"modified": 1766008253.044,
+				"created": 1762890506,
+				"revision": 5
+			}
+		}
+	]
+}

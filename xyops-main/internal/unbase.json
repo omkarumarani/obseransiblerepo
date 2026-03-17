@@ -1,0 +1,376 @@
+{
+	"indexes": {
+		
+		"jobs": {
+			"default_search_field": "code",
+			"fields": [
+				{
+					"id": "code",
+					"source": "/code"
+				},
+				{
+					"id": "date",
+					"source": "/completed",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "source",
+					"source": "/source"
+				},
+				{
+					"id": "tags",
+					"source": "/tags"
+				},
+				{
+					"id": "event",
+					"source": "/event"
+				},
+				{
+					"id": "category",
+					"source": "/category"
+				},
+				{
+					"id": "plugin",
+					"source": "/plugin"
+				},
+				{
+					"id": "server",
+					"source": "/server"
+				},
+				{
+					"id": "groups",
+					"source": "/groups"
+				},
+				{
+					"id": "workflow",
+					"source": "/workflow/event"
+				},
+				{
+					"id": "tickets",
+					"source": "/tickets"
+				}
+			],
+			"sorters": [
+				{
+					"id": "completed",
+					"source": "/completed",
+					"type": "number"
+				},
+				{
+					"id": "elapsed",
+					"source": "/elapsed",
+					"type": "number"
+				}
+			]
+		},
+		
+		"alerts": {
+			"default_search_field": "",
+			"fields": [
+				{
+					"id": "active",
+					"source": "/active"
+				},
+				{
+					"id": "alert",
+					"source": "/alert"
+				},
+				{
+					"id": "groups",
+					"source": "/groups"
+				},
+				{
+					"id": "server",
+					"source": "/server"
+				},
+				{
+					"id": "start",
+					"source": "/date",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "end",
+					"source": "/modified",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "jobs",
+					"source": "/jobs"
+				},
+				{
+					"id": "tickets",
+					"source": "/tickets"
+				}
+			]
+		},
+		
+		"snapshots": {
+			"default_search_field": "",
+			"fields": [
+				{
+					"id": "type",
+					"source": "/type"
+				},
+				{
+					"id": "source",
+					"source": "/source"
+				},
+				{
+					"id": "server",
+					"source": "/server"
+				},
+				{
+					"id": "groups",
+					"source": "/groups"
+				},
+				{
+					"id": "date",
+					"source": "/date",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "alerts",
+					"source": "/alerts"
+				},
+				{
+					"id": "jobs",
+					"source": "/jobs"
+				}
+			]
+		},
+		
+		"servers": {
+			"default_search_field": "keywords",
+			"fields": [
+				{
+					"id": "groups",
+					"source": "/groups",
+					"master_list": true
+				},
+				{
+					"id": "created",
+					"source": "/created",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "modified",
+					"source": "/modified",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "keywords",
+					"source": "/keywords",
+					"min_word_length": 1,
+					"max_word_length": 64,
+					"use_remove_words": false,
+					"use_stemmer": false
+				},
+				{
+					"id": "os_platform",
+					"source": "/info/os/platform",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				},
+				{
+					"id": "os_distro",
+					"source": "/info/os/distro",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				},
+				{
+					"id": "os_release",
+					"source": "/info/os/release",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				},
+				{
+					"id": "os_arch",
+					"source": "/info/os/arch",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				},
+				{
+					"id": "cpu_virt",
+					"source": "/info/virt/vendor",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				},
+				{
+					"id": "cpu_brand",
+					"source": "/info/cpu/combo",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				},
+				{
+					"id": "cpu_cores",
+					"source": "/info/cpu/cores",
+					"filter": "alphanum",
+					"master_list": true,
+					"master_labels": true
+				}
+			],
+			"sorters": [
+				{
+					"id": "hostname",
+					"source": "/hostname",
+					"type": "string"
+				},
+				{
+					"id": "ip",
+					"source": "/ip",
+					"type": "string"
+				},
+				{
+					"id": "date",
+					"source": "/date",
+					"type": "number"
+				}
+			]
+		},
+		
+		"activity": {
+			"default_search_field": "keywords",
+			"fields": [
+				{
+					"id": "action",
+					"source": "/action"
+				},
+				{
+					"id": "keywords",
+					"source": "/keywords",
+					"min_word_length": 1,
+					"max_word_length": 128,
+					"use_remove_words": false,
+					"use_stemmer": false
+				},
+				{
+					"id": "date",
+					"source": "/epoch",
+					"type": "number",
+					"divide": 3600
+				}
+			]
+		},
+		
+		"tickets": {
+			"default_search_field": "body",
+			"fields": [
+				{
+					"id": "type",
+					"source": "/type",
+					"master_list": true
+				},
+				{
+					"id": "num",
+					"source": "/num",
+					"type": "number"
+				},
+				{
+					"id": "status",
+					"source": "/status",
+					"master_list": true
+				},
+				{
+					"id": "category",
+					"source": "/category"
+				},
+				{
+					"id": "username",
+					"source": "/username",
+					"filter": "alphanum"
+				},
+				{
+					"id": "assignees",
+					"source": "/assignees",
+					"filter": "alphanum_array"
+				},
+				{
+					"id": "cc",
+					"source": "/cc",
+					"filter": "alphanum_array"
+				},
+				{
+					"id": "jobs",
+					"source": "/jobs"
+				},
+				{
+					"id": "tags",
+					"source": "/tags",
+					"master_list": true
+				},
+				{
+					"id": "created",
+					"source": "/created",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "modified",
+					"source": "/modified",
+					"type": "number",
+					"divide": 3600
+				},
+				{
+					"id": "due",
+					"source": "/due",
+					"type": "date"
+				},
+				{
+					"id": "server",
+					"source": "/server"
+				},
+				{
+					"id": "subject",
+					"source": "/subject",
+					"min_word_length": 1,
+					"max_word_length": 32,
+					"max_words": 50,
+					"use_stemmer": true
+				},
+				{
+					"id": "body",
+					"source": "[/username] [/subject] [/body]",
+					"min_word_length": 1,
+					"max_word_length": 32,
+					"max_words": 500,
+					"use_stemmer": true,
+					"filter": "markdown"
+				},
+				{
+					"id": "changes",
+					"source": "/changes",
+					"min_word_length": 1,
+					"max_word_length": 32,
+					"max_words": 500,
+					"use_stemmer": true,
+					"filter": "markdown"
+				}
+			],
+			"sorters": [
+				{
+					"id": "num",
+					"source": "/num",
+					"type": "number"
+				},
+				{
+					"id": "modified",
+					"source": "/modified",
+					"type": "number"
+				}
+			]
+		}
+		
+	}
+}

@@ -1,0 +1,6 @@
+# troublemaker/requirements.txt
+# ------------------------------
+# The only runtime dependency is the requests library for HTTP calls.
+# Everything else (logging, random, time, os, dataclasses) is stdlib.
+
+requests==2.32.3

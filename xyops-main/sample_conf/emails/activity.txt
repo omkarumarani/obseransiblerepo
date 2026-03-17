@@ -1,0 +1,24 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: {{config.client.name}} Activity Report: {{description}} -->
+<!-- Title: Activity Report -->
+
+### Summary:
+
+- **Action:** `{{action}}`
+- **Date/Time:** {{nice_date_time}}
+- **Primary Conductor:** `{{hostID}}`
+
+### Description:
+
+{{description}}
+{{extras}}
+
+### Details:
+
+{{details}}
+
+### Data:
+
+```json
+{{json}}
+```

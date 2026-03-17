@@ -1,0 +1,184 @@
+{
+	"type": "xypdf",
+	"description": "xyOps Portable Data Object",
+	"version": "1.0",
+	"items": [
+		{
+			"type": "event",
+			"data": {
+				"id": "emiaprh3uqd",
+				"title": "Decision Test",
+				"enabled": true,
+				"targets": [],
+				"params": {},
+				"fields": [],
+				"triggers": [
+					{
+						"enabled": true,
+						"type": "manual",
+						"id": "n9bt5sfl"
+					}
+				],
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"notes": "",
+				"workflow": {
+					"nodes": [
+						{
+							"id": "n9bt5sfl",
+							"type": "trigger",
+							"x": 100,
+							"y": 340
+						},
+						{
+							"id": "nk42jgcz",
+							"type": "job",
+							"data": {
+								"params": {
+									"duration": "1",
+									"action": "Success",
+									"custom": "",
+									"burn": false,
+									"network": false,
+									"upload": false
+								},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "Generate Data",
+								"category": "general",
+								"plugin": "testplug",
+								"icon": "",
+								"tags": []
+							},
+							"x": 295,
+							"y": 252
+						},
+						{
+							"id": "no9kpsr0",
+							"type": "controller",
+							"data": {
+								"controller": "decision",
+								"label": "Random",
+								"icon": "",
+								"decision": "data.num == 42"
+							},
+							"x": 706,
+							"y": 291
+						},
+						{
+							"id": "nqe6dmpv",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/sh\n\necho \"Hi\"\necho '{\"xy\":1,\"data\":{\"result\":\"hi\"}}'\n",
+									"annotate": false,
+									"json": true
+								},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "Hi",
+								"category": "general",
+								"plugin": "shellplug",
+								"tags": []
+							},
+							"x": 909,
+							"y": 184
+						},
+						{
+							"id": "ndmamfjr",
+							"type": "controller",
+							"data": {
+								"controller": "decision",
+								"label": "Random",
+								"icon": "",
+								"decision": "data.num != 42"
+							},
+							"x": 704,
+							"y": 563
+						},
+						{
+							"id": "n8qpiq1i",
+							"type": "job",
+							"data": {
+								"params": {
+									"script": "#!/bin/sh\n\necho \"There\"\necho '{\"xy\":1,\"data\":{\"result\":\"there\"}}'\n",
+									"annotate": false,
+									"json": true
+								},
+								"targets": [
+									"main"
+								],
+								"algo": "random",
+								"label": "There",
+								"category": "general",
+								"plugin": "shellplug",
+								"tags": []
+							},
+							"x": 905,
+							"y": 507
+						}
+					],
+					"connections": [
+						{
+							"id": "cb0obfyo",
+							"source": "n9bt5sfl",
+							"dest": "nk42jgcz"
+						},
+						{
+							"id": "ctuwzldf",
+							"source": "nk42jgcz",
+							"dest": "no9kpsr0",
+							"condition": "success"
+						},
+						{
+							"id": "ciwg311d",
+							"source": "no9kpsr0",
+							"dest": "nqe6dmpv"
+						},
+						{
+							"id": "cn4z7fm1",
+							"source": "ndmamfjr",
+							"dest": "n8qpiq1i"
+						},
+						{
+							"id": "cd2ez4su",
+							"source": "nk42jgcz",
+							"dest": "ndmamfjr",
+							"condition": "success"
+						}
+					]
+				},
+				"category": "general",
+				"type": "workflow",
+				"icon": "",
+				"tags": [],
+				"plugin": "_workflow",
+				"username": "admin",
+				"modified": 1766008150.037,
+				"created": 1763841626,
+				"revision": 5
+			}
+		}
+	]
+}

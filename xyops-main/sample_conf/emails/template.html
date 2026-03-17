@@ -1,0 +1,270 @@
+<style>
+	* {
+		box-sizing: border-box;
+	}
+	
+	.clear { clear: both; }
+	.left { float: left; }
+	.right { float: right; }
+	
+	div.email_wrapper {
+		background-color: rgb(248, 250, 252); 
+		font-family: "Helvetica Neue", Helvetica, system-ui, sans-serif; 
+		font-size: 15px;
+		position: relative;
+	}
+	
+	div.email_header {
+		padding: 30px 30px 0px 30px;
+	}
+	
+	div.email_footer {
+		padding: 0px 30px 30px 30px;
+		font-size: 11px; 
+		color: rgb(185, 190, 200);
+	}
+	
+	div.box {
+		position: relative;
+		margin: 30px;
+		background: rgb(255, 255, 255);
+		border: 1px solid rgb(233, 236, 240);
+		border-radius: 4px;
+		box-shadow: 2px 2px 8px rgb(233, 236, 240);
+	}
+	div.box:first-of-type {
+		margin-top: 15px;
+	}
+	
+	div.box_content {
+		font-size: 15px;
+		padding: 30px;
+	}
+	div.box_content.table {
+		padding: 0px 25px 25px 25px
+	}
+	
+	div.title {
+		position: relative;
+		top: 3px;
+		margin-left: 20px;
+		height: 40px;
+		line-height: 40px;
+		font-size: 25px;
+		font-weight: bold;
+		color: rgb(115, 115, 130);
+	}
+	
+	.button {
+		position: relative;
+		display: inline-block;
+		height: 30px;
+		line-height: 28px;
+		padding: 0px 10px 0px 10px;
+		background: rgb(255, 255, 255);
+		color: rgb(115, 115, 130);
+		border: 1px solid rgb(227, 229, 233);
+		border-radius: 5px;
+		cursor: pointer;
+		text-decoration: none;
+		
+		font-size: 13px;
+		font-weight: bold;
+		text-align: center;
+		
+		user-select: none;
+		-moz-user-select: none;
+		-webkit-user-select: none;
+	}
+	.button.primary {
+		background: rgb(55, 145, 245);
+		color: white;
+	}
+	.button.secondary {
+		background: rgb(40, 167, 69);
+		color: white;
+	}
+	
+	.markdown-body * {
+		box-sizing: border-box;
+	}
+	
+	.markdown-body > *:first-child {
+		margin-top: 0 !important;
+	}
+	
+	.markdown-body > *:last-child {
+		margin-bottom: 0 !important;
+	}
+	
+	.markdown-body > blockquote:last-child > p:last-child {
+		margin-bottom: 0 !important;
+	}
+	
+	.markdown-body h1,
+	.markdown-body h2,
+	.markdown-body h3,
+	.markdown-body h4,
+	.markdown-body h5,
+	.markdown-body h6 {
+		margin-top: 0px;
+		margin-bottom: 16px;
+		font-weight: 600;
+		line-height: 1.25;
+		color: rgb(60, 70, 85);
+	}
+	
+	.markdown-body h5,
+	.markdown-body h6 {
+		font-size: 13px;
+	}
+	
+	.markdown-body p,
+	.markdown-body blockquote,
+	.markdown-body ul,
+	.markdown-body ol,
+	.markdown-body dl,
+	.markdown-body table,
+	.markdown-body pre {
+		margin-top: 0;
+		margin-bottom: 16px;
+		line-height: 1.5;
+	}
+	
+	.markdown-body ul ul,
+	.markdown-body ul ol,
+	.markdown-body ol ol,
+	.markdown-body ol ul {
+		margin-top: 0;
+		margin-bottom: 0;
+	}
+	
+	.markdown-body li {
+		line-height: 1.5;
+	}
+	
+	.markdown-body li.task {
+		list-style-type: none;
+	}
+	
+	.markdown-body blockquote {
+		border-left: 2px solid rgb(185, 190, 200);
+		margin-left: 0;
+		padding-left: 30px;
+		font-style: italic;
+		color: rgb(115, 115, 130);
+	}
+	
+	.markdown-body table {
+		border: 1px solid rgb(227, 229, 233);
+		border-collapse: collapse; 
+		border-spacing: 0;
+	}
+	
+	.markdown-body table tr th {
+		padding: 3px 20px 3px 3px;
+		border-bottom: 1px solid rgb(227, 229, 233);
+		background-color: rgb(248, 250, 252);
+		color: rgb(115, 115, 130);
+		text-align: left;
+		white-space: nowrap;
+		font-size: 15px;
+	}
+	
+	.markdown-body table tr td {
+		padding: 2px 15px 2px 3px;
+		border-bottom: 1px solid rgb(227, 229, 233);
+		font-size: 15px;
+	}
+	
+	.markdown-body input {
+		font: inherit;
+		margin: 0;
+		overflow: visible;
+		font-family: inherit;
+		font-size: inherit;
+		line-height: inherit;
+	}
+	
+	.markdown-body [type="checkbox"] {
+		box-sizing: border-box;
+		padding: 0;
+	}
+	
+	.markdown-body p code, .markdown-body td code, .markdown-body li code {
+		font-family: SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+		background-color: rgb(248, 250, 252);
+		border: 1px solid rgb(227, 229, 233);
+		border-radius: 4px;
+		padding: 2px 4px 2px 4px;
+		margin-left: 3px;
+		margin-right: 3px;
+		font-size: 0.85em;
+	}
+	
+	.markdown-body td code {
+		position: relative;
+		top: -1px;
+	}
+	
+	.markdown-body pre {
+		font-family: SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+		white-space: pre-wrap;
+		border-radius: 2px;
+		padding: 2px 4px 4px 4px;
+		font-size: 0.85em;
+		margin-left: 10px;
+	}
+	
+	.markdown-body pre code {
+		font-family: SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+	}
+	
+	.markdown-body hr {
+		margin-bottom: 20px;
+		border: none;
+		height: 1px;
+		background-color: rgb(227, 229, 233);
+	}
+	
+	.markdown-body li > p {
+		margin-bottom: 0 !important;
+	}
+	
+	.markdown-body img {
+		max-width: 75%;
+	}
+	
+	details {
+		margin-bottom: 1em;
+	}
+	details > summary {
+		margin-bottom: 1em;
+	}
+	details > summary {
+		font-weight: bold;
+		color: rgb(115, 115, 130);
+		cursor: pointer;
+	}
+</style>
+
+<div class="email_wrapper">
+	<div class="email_header">
+		<div class="left"><img src="{{logo_url}}" style="height:40px;"></div>
+		<div class="title left">{{title}}</div>
+		{{buttons_html}}
+		<div class="clear"></div>
+	</div>
+	
+	<div class="box" style="margin-top:30px;">
+		<div class="box_content">
+			<div class="markdown-body">{{markdown}}</div>
+		</div>
+	</div>
+	
+	<div class="email_footer">
+		<div class="left">{{copyright}}</div>
+		<div class="right">{{version}}</div>
+		<div class="clear"></div>
+	</div>
+</div>

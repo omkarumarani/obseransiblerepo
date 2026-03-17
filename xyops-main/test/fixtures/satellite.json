@@ -1,0 +1,12 @@
+{ 
+	"host": "localhost",
+	"port": 6622,
+	"secure": false,
+	"socket_opts": { "rejectUnauthorized": false },
+	"temp_dir": "temp",
+	"child_kill_timeout": 10,
+	"monitoring_enabled": true,
+	"quickmon_enabled": true,
+	"id": "satunit1",
+	"secret_key": "UNIT_TEST"
+}

@@ -1,0 +1,6226 @@
+{
+	"storage": [
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat1",
+				"title": "Sports",
+				"enabled": true,
+				"sort_order": 1,
+				"username": "admin",
+				"modified": 1726897997,
+				"created": 1726897997,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat2",
+				"title": "Photography",
+				"enabled": true,
+				"sort_order": 2,
+				"username": "admin",
+				"modified": 1727133637,
+				"created": 1727133637,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat3",
+				"title": "Performing Arts",
+				"enabled": true,
+				"sort_order": 3,
+				"username": "admin",
+				"modified": 1726938953,
+				"created": 1726938953,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat4",
+				"title": "Hospital & Health Care",
+				"enabled": true,
+				"sort_order": 4,
+				"username": "admin",
+				"modified": 1727224521,
+				"created": 1727224521,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat5",
+				"title": "Recreational Facilities and Services",
+				"enabled": true,
+				"sort_order": 5,
+				"username": "admin",
+				"modified": 1727126413,
+				"created": 1727126413,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat6",
+				"title": "Warehousing",
+				"enabled": true,
+				"sort_order": 6,
+				"username": "admin",
+				"modified": 1726700106,
+				"created": 1726700106,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat7",
+				"title": "Textiles",
+				"enabled": true,
+				"sort_order": 7,
+				"username": "admin",
+				"modified": 1727166027,
+				"created": 1727166027,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat8",
+				"title": "Public Safety",
+				"enabled": true,
+				"sort_order": 8,
+				"username": "admin",
+				"modified": 1727251376,
+				"created": 1727251376,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat9",
+				"title": "Medical Practice",
+				"enabled": true,
+				"sort_order": 9,
+				"username": "admin",
+				"modified": 1727184272,
+				"created": 1727184272,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/categories",
+			{
+				"id": "cat10",
+				"title": "Media Production",
+				"enabled": true,
+				"sort_order": 10,
+				"username": "admin",
+				"modified": 1726643935,
+				"created": 1726643935,
+				"notes": "",
+				"limits": [],
+				"actions": []
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event1",
+				"title": "Realigned non-volatile support",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727230590,
+				"created": 1727230590,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							12
+						],
+						"days": [
+							10
+						],
+						"hours": [
+							13
+						],
+						"minutes": [
+							5
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event2",
+				"title": "Self-enabling bi-directional analyzer",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727058228,
+				"created": 1727058228,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 10,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							3
+						],
+						"days": [
+							1
+						],
+						"hours": [
+							6
+						],
+						"minutes": [
+							50
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event3",
+				"title": "Adaptive intangible framework",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726632241,
+				"created": 1726632241,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 19,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2025
+						],
+						"months": [
+							5
+						],
+						"days": [
+							9
+						],
+						"hours": [
+							3
+						],
+						"minutes": [
+							17
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event4",
+				"title": "Distributed asymmetric customer loyalty",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726735041,
+				"created": 1726735041,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 25,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1750697572
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event5",
+				"title": "Universal bottom-line product",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726705851,
+				"created": 1726705851,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							11
+						],
+						"days": [
+							9
+						],
+						"hours": [
+							23
+						],
+						"minutes": [
+							22
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event6",
+				"title": "Function-based global groupware",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727314659,
+				"created": 1727314659,
+				"category": "cat6",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 47,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							7
+						],
+						"days": [
+							13
+						],
+						"hours": [
+							1
+						],
+						"minutes": [
+							50
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event7",
+				"title": "Focused multi-state benchmark",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727069922,
+				"created": 1727069922,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 12,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2024
+						],
+						"months": [
+							11
+						],
+						"days": [
+							4
+						],
+						"hours": [
+							5
+						],
+						"minutes": [
+							8
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event8",
+				"title": "Inverse systemic strategy",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726496260,
+				"created": 1726496260,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							2
+						],
+						"hours": [
+							19
+						],
+						"minutes": [
+							8
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event9",
+				"title": "Monitored value-added protocol",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726832295,
+				"created": 1726832295,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 16;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							51
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event10",
+				"title": "Front-line next generation forecast",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727074346,
+				"created": 1727074346,
+				"category": "cat8",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 49;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							21
+						],
+						"minutes": [
+							57
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event11",
+				"title": "Reactive tertiary array",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726487504,
+				"created": 1726487504,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 43;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							2
+						],
+						"hours": [
+							16
+						],
+						"minutes": [
+							48
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event12",
+				"title": "Right-sized upward-trending internet solution",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726674020,
+				"created": 1726674020,
+				"category": "cat6",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 41,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1740750592
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event13",
+				"title": "Exclusive transitional core",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726675534,
+				"created": 1726675534,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 36;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							7
+						],
+						"days": [
+							28
+						],
+						"hours": [
+							23
+						],
+						"minutes": [
+							23
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event14",
+				"title": "User-friendly impactful secured line",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726676946,
+				"created": 1726676946,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1740928421
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event15",
+				"title": "Persevering mission-critical product",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726833182,
+				"created": 1726833182,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 49;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							19
+						],
+						"minutes": [
+							44
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event16",
+				"title": "Phased leading edge internet solution",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727094227,
+				"created": 1727094227,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							6
+						],
+						"hours": [
+							20
+						],
+						"minutes": [
+							11
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event17",
+				"title": "Ameliorated web-enabled success",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726658887,
+				"created": 1726658887,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 16,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							16
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event18",
+				"title": "Programmable motivating emulation",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726778465,
+				"created": 1726778465,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 26;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							38
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event19",
+				"title": "Front-line national instruction set",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726573787,
+				"created": 1726573787,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 37,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							5
+						],
+						"hours": [
+							18
+						],
+						"minutes": [
+							58
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event20",
+				"title": "Cloned multi-tasking groupware",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726553498,
+				"created": 1726553498,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 13,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							21
+						],
+						"minutes": [
+							33
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event21",
+				"title": "Public-key incremental software",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726931034,
+				"created": 1726931034,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 45,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							22
+						],
+						"minutes": [
+							6
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event22",
+				"title": "Optimized stable conglomeration",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726796220,
+				"created": 1726796220,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 17;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							43
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event23",
+				"title": "Innovative web-enabled methodology",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726591385,
+				"created": 1726591385,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							6
+						],
+						"minutes": [
+							59
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event24",
+				"title": "Streamlined static help-desk",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726646811,
+				"created": 1726646811,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1746451937
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event25",
+				"title": "Pre-emptive eco-centric system engine",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727045703,
+				"created": 1727045703,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1745340445
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event26",
+				"title": "Digitized secondary projection",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1727047119,
+				"created": 1727047119,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 22;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							6
+						],
+						"hours": [
+							19
+						],
+						"minutes": [
+							16
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event27",
+				"title": "Cloned bi-directional functionalities",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726953902,
+				"created": 1726953902,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1727717538
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event28",
+				"title": "Customizable didactic attitude",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726804402,
+				"created": 1726804402,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 18,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							43
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event29",
+				"title": "Triple-buffered zero tolerance encoding",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726922660,
+				"created": 1726922660,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 15;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1758682499
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event30",
+				"title": "Optional national synergy",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726950619,
+				"created": 1726950619,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 57;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							5
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event31",
+				"title": "Face to face mission-critical application",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727276618,
+				"created": 1727276618,
+				"category": "cat6",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"days": [
+							22
+						],
+						"hours": [
+							9
+						],
+						"minutes": [
+							7
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event32",
+				"title": "User-centric heuristic monitoring",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726753226,
+				"created": 1726753226,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1727935257
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event33",
+				"title": "Digitized background workforce",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726486232,
+				"created": 1726486232,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2024
+						],
+						"months": [
+							11
+						],
+						"days": [
+							23
+						],
+						"hours": [
+							18
+						],
+						"minutes": [
+							48
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event34",
+				"title": "Universal methodical workforce",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726689587,
+				"created": 1726689587,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							3
+						],
+						"days": [
+							16
+						],
+						"hours": [
+							18
+						],
+						"minutes": [
+							50
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event35",
+				"title": "User-centric zero defect ability",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726685909,
+				"created": 1726685909,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							15
+						],
+						"minutes": [
+							14
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event36",
+				"title": "Organized systemic migration",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727253538,
+				"created": 1727253538,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 31,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							7
+						],
+						"minutes": [
+							18
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event37",
+				"title": "Optimized optimizing standardization",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726868010,
+				"created": 1726868010,
+				"category": "cat6",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"days": [
+							8
+						],
+						"hours": [
+							16
+						],
+						"minutes": [
+							45
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event38",
+				"title": "Self-enabling incremental matrices",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726548621,
+				"created": 1726548621,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							16
+						],
+						"minutes": [
+							36
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event39",
+				"title": "Decentralized object-oriented knowledge user",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727020309,
+				"created": 1727020309,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							45
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event40",
+				"title": "Re-engineered logistical system engine",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726549808,
+				"created": 1726549808,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 22,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							17
+						],
+						"minutes": [
+							12
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event41",
+				"title": "Business-focused hybrid product",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727069403,
+				"created": 1727069403,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 13,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							0
+						],
+						"hours": [
+							7
+						],
+						"minutes": [
+							5
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event42",
+				"title": "Persistent context-sensitive interface",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726949328,
+				"created": 1726949328,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 30,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							9
+						],
+						"days": [
+							22
+						],
+						"hours": [
+							8
+						],
+						"minutes": [
+							11
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event43",
+				"title": "Focused transitional ability",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726527486,
+				"created": 1726527486,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 23,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							11
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event44",
+				"title": "De-engineered cohesive application",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727033730,
+				"created": 1727033730,
+				"category": "cat6",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 7;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							6
+						],
+						"minutes": [
+							29
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event45",
+				"title": "Re-contextualized zero defect project",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1727188945,
+				"created": 1727188945,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 37;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1752839697
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event46",
+				"title": "Visionary dedicated extranet",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726967767,
+				"created": 1726967767,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 27;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							11
+						],
+						"days": [
+							9
+						],
+						"hours": [
+							17
+						],
+						"minutes": [
+							36
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event47",
+				"title": "Team-oriented fault-tolerant definition",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726989499,
+				"created": 1726989499,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 22;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							21
+						],
+						"minutes": [
+							32
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event48",
+				"title": "De-engineered foreground benchmark",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726644856,
+				"created": 1726644856,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 56,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							17
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event49",
+				"title": "Versatile contextually-based circuit",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726521764,
+				"created": 1726521764,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 19;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1753879058
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event50",
+				"title": "Cloned 6th generation strategy",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726633163,
+				"created": 1726633163,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							22
+						],
+						"minutes": [
+							42
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event51",
+				"title": "Persevering bandwidth-monitored groupware",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726795536,
+				"created": 1726795536,
+				"category": "cat8",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 2,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							1
+						],
+						"hours": [
+							3
+						],
+						"minutes": [
+							29
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event52",
+				"title": "Universal neutral framework",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727246640,
+				"created": 1727246640,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 55,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							4
+						],
+						"days": [
+							3
+						],
+						"hours": [
+							18
+						],
+						"minutes": [
+							28
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event53",
+				"title": "Configurable 4th generation project",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726554842,
+				"created": 1726554842,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							2
+						],
+						"minutes": [
+							42
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event54",
+				"title": "Programmable system-worthy architecture",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726894258,
+				"created": 1726894258,
+				"category": "cat8",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 50,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							21
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event55",
+				"title": "De-engineered attitude-oriented frame",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726971523,
+				"created": 1726971523,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 10,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2025
+						],
+						"months": [
+							3
+						],
+						"days": [
+							25
+						],
+						"hours": [
+							23
+						],
+						"minutes": [
+							51
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event56",
+				"title": "De-engineered fresh-thinking application",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726982990,
+				"created": 1726982990,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 39;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2025
+						],
+						"months": [
+							2
+						],
+						"days": [
+							9
+						],
+						"hours": [
+							0
+						],
+						"minutes": [
+							36
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event57",
+				"title": "Compatible analyzing Graphical User Interface",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1727098671,
+				"created": 1727098671,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 44;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							11
+						],
+						"days": [
+							27
+						],
+						"hours": [
+							8
+						],
+						"minutes": [
+							30
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event58",
+				"title": "Ergonomic exuding algorithm",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727071837,
+				"created": 1727071837,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							9
+						],
+						"days": [
+							13
+						],
+						"hours": [
+							19
+						],
+						"minutes": [
+							31
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event59",
+				"title": "Sharable interactive complexity",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727113027,
+				"created": 1727113027,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 24;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							8
+						],
+						"minutes": [
+							49
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event60",
+				"title": "Enhanced hybrid pricing structure",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727147191,
+				"created": 1727147191,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 35;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							9
+						],
+						"days": [
+							12
+						],
+						"hours": [
+							2
+						],
+						"minutes": [
+							11
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event61",
+				"title": "Multi-layered neutral Graphical User Interface",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726838425,
+				"created": 1726838425,
+				"category": "cat8",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 12,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							32
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event62",
+				"title": "Reverse-engineered transitional frame",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726721558,
+				"created": 1726721558,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 27;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							7
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event63",
+				"title": "Persistent reciprocal firmware",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1727227764,
+				"created": 1727227764,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 6,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							1
+						],
+						"hours": [
+							19
+						],
+						"minutes": [
+							4
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event64",
+				"title": "Re-engineered motivating knowledge base",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726811412,
+				"created": 1726811412,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 14;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							20
+						],
+						"minutes": [
+							20
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event65",
+				"title": "Down-sized real-time system engine",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726786150,
+				"created": 1726786150,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							4
+						],
+						"minutes": [
+							9
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event66",
+				"title": "Up-sized reciprocal hardware",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727305086,
+				"created": 1727305086,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 27,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							4
+						],
+						"minutes": [
+							28
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event67",
+				"title": "Programmable demand-driven matrix",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727123305,
+				"created": 1727123305,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 57;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							6
+						],
+						"hours": [
+							10
+						],
+						"minutes": [
+							29
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event68",
+				"title": "Optimized solution-oriented methodology",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727250213,
+				"created": 1727250213,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 43;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							0
+						],
+						"hours": [
+							11
+						],
+						"minutes": [
+							8
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event69",
+				"title": "Automated value-added function",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1727222473,
+				"created": 1727222473,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 54,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							11
+						],
+						"days": [
+							3
+						],
+						"hours": [
+							17
+						],
+						"minutes": [
+							0
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event70",
+				"title": "Ergonomic neutral success",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726844828,
+				"created": 1726844828,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 30,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2025
+						],
+						"months": [
+							1
+						],
+						"days": [
+							23
+						],
+						"hours": [
+							0
+						],
+						"minutes": [
+							38
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event71",
+				"title": "Digitized discrete protocol",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727212496,
+				"created": 1727212496,
+				"category": "cat6",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 44;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							8
+						],
+						"days": [
+							15
+						],
+						"hours": [
+							2
+						],
+						"minutes": [
+							0
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event72",
+				"title": "Profound 6th generation contingency",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727164313,
+				"created": 1727164313,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 29;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1736461454
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event73",
+				"title": "Open-architected analyzing productivity",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726690559,
+				"created": 1726690559,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 17,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							46
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event74",
+				"title": "Decentralized leading edge ability",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727049453,
+				"created": 1727049453,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2025
+						],
+						"months": [
+							7
+						],
+						"days": [
+							8
+						],
+						"hours": [
+							0
+						],
+						"minutes": [
+							39
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event75",
+				"title": "Focused scalable architecture",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727057261,
+				"created": 1727057261,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 53,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							13
+						],
+						"minutes": [
+							24
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event76",
+				"title": "Innovative local data-warehouse",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726690382,
+				"created": 1726690382,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 15;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1752103312
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event77",
+				"title": "Open-source directional projection",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726733320,
+				"created": 1726733320,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							53
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event78",
+				"title": "Advanced heuristic help-desk",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726662161,
+				"created": 1726662161,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 45;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1755667436
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event79",
+				"title": "Up-sized interactive contingency",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726697773,
+				"created": 1726697773,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 27,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"days": [
+							10
+						],
+						"hours": [
+							0
+						],
+						"minutes": [
+							5
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event80",
+				"title": "Public-key disintermediate website",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1726923209,
+				"created": 1726923209,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							7
+						],
+						"days": [
+							12
+						],
+						"hours": [
+							17
+						],
+						"minutes": [
+							11
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event81",
+				"title": "Right-sized global moderator",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727000623,
+				"created": 1727000623,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							20
+						],
+						"minutes": [
+							1
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event82",
+				"title": "Ameliorated bi-directional toolset",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726638047,
+				"created": 1726638047,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 22,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							0
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event83",
+				"title": "Compatible system-worthy pricing structure",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726728537,
+				"created": 1726728537,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 15,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							3
+						],
+						"hours": [
+							14
+						],
+						"minutes": [
+							52
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event84",
+				"title": "Decentralized logistical portal",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726947980,
+				"created": 1726947980,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 18;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							3
+						],
+						"days": [
+							29
+						],
+						"hours": [
+							23
+						],
+						"minutes": [
+							4
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event85",
+				"title": "Re-engineered optimal extranet",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727005028,
+				"created": 1727005028,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 50;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							0
+						],
+						"minutes": [
+							42
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event86",
+				"title": "Digitized tertiary matrix",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727018172,
+				"created": 1727018172,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 58,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							1
+						],
+						"hours": [
+							6
+						],
+						"minutes": [
+							47
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event87",
+				"title": "Total heuristic forecast",
+				"enabled": false,
+				"username": "admin",
+				"modified": 1727200047,
+				"created": 1727200047,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 33;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							2
+						],
+						"hours": [
+							21
+						],
+						"minutes": [
+							34
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event88",
+				"title": "Versatile 3rd generation circuit",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726933684,
+				"created": 1726933684,
+				"category": "cat3",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 46,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							9
+						],
+						"minutes": [
+							17
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event89",
+				"title": "Expanded directional archive",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726937477,
+				"created": 1726937477,
+				"category": "cat8",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							6
+						],
+						"minutes": [
+							41
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event90",
+				"title": "Open-source zero tolerance moderator",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726623963,
+				"created": 1726623963,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							40
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event91",
+				"title": "Ameliorated asymmetric instruction set",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726599778,
+				"created": 1726599778,
+				"category": "cat10",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 7,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"days": [
+							23
+						],
+						"hours": [
+							21
+						],
+						"minutes": [
+							48
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event92",
+				"title": "Networked analyzing protocol",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726742855,
+				"created": 1726742855,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 26;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							9
+						],
+						"days": [
+							10
+						],
+						"hours": [
+							16
+						],
+						"minutes": [
+							21
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event93",
+				"title": "Team-oriented maximized standardization",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726463348,
+				"created": 1726463348,
+				"category": "cat2",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 14;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							29
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event94",
+				"title": "Horizontal contextually-based open architecture",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727289311,
+				"created": 1727289311,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 40,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"hours": [
+							22
+						],
+						"minutes": [
+							9
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event95",
+				"title": "Triple-buffered 3rd generation approach",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726762500,
+				"created": 1726762500,
+				"category": "cat4",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "httpplug",
+				"params": {
+					"method": "GET",
+					"url": "https://github.com/jhuckaby/performa-satellite/releases/latest/download/performa-satellite-linux-x64",
+					"headers": "",
+					"data": "",
+					"timeout": 30,
+					"success_match": "",
+					"error_match": "",
+					"follow": true,
+					"ssl_cert_bypass": false
+				},
+				"triggers": [
+					{
+						"type": "single",
+						"enabled": true,
+						"epoch": 1741658455
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event96",
+				"title": "Cross-group object-oriented functionalities",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726690168,
+				"created": 1726690168,
+				"category": "cat5",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 51,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"years": [
+							2025
+						],
+						"months": [
+							3
+						],
+						"days": [
+							16
+						],
+						"hours": [
+							19
+						],
+						"minutes": [
+							6
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event97",
+				"title": "Optional content-based website",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1727276929,
+				"created": 1727276929,
+				"category": "cat8",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 20,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							9
+						],
+						"days": [
+							26
+						],
+						"hours": [
+							16
+						],
+						"minutes": [
+							28
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event98",
+				"title": "Automated interactive firmware",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726906487,
+				"created": 1726906487,
+				"category": "cat1",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "shellplug",
+				"params": {
+					"script": "#!/bin/bash\n\nsleep 43;\necho \"HELLO.\";\n",
+					"annotate": false,
+					"json": false
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"weekdays": [
+							0
+						],
+						"hours": [
+							18
+						],
+						"minutes": [
+							23
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event99",
+				"title": "Distributed bifurcated functionalities",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726645262,
+				"created": 1726645262,
+				"category": "cat7",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 14,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"months": [
+							7
+						],
+						"days": [
+							24
+						],
+						"hours": [
+							14
+						],
+						"minutes": [
+							23
+						]
+					}
+				]
+			}
+		],
+		[
+			"listPush",
+			"global/events",
+			{
+				"id": "event100",
+				"title": "Re-contextualized actuating utilisation",
+				"enabled": true,
+				"username": "admin",
+				"modified": 1726889559,
+				"created": 1726889559,
+				"category": "cat9",
+				"targets": [
+					"main"
+				],
+				"algo": "random",
+				"notes": "",
+				"revision": 1,
+				"limits": [
+					{
+						"type": "job",
+						"enabled": true,
+						"amount": 1
+					},
+					{
+						"type": "queue",
+						"enabled": true,
+						"amount": 0
+					},
+					{
+						"type": "retry",
+						"enabled": true,
+						"amount": 0,
+						"duration": 0
+					}
+				],
+				"actions": [],
+				"tags": [],
+				"plugin": "testplug",
+				"params": {
+					"duration": 58,
+					"action": "Success",
+					"progress": true,
+					"burn": false,
+					"secret": "foo"
+				},
+				"triggers": [
+					{
+						"type": "schedule",
+						"enabled": true,
+						"minutes": [
+							1
+						]
+					}
+				]
+			}
+		]
+	]
+}

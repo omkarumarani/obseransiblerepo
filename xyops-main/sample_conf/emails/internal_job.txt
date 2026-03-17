@@ -1,0 +1,16 @@
+<!-- To: {{job.email}} -->
+<!-- Subject: {{config.client.name}} Internal Job Report: {{job.title}} -->
+<!-- Title: Internal Job Report -->
+
+- **Job ID:** `{{job.id}}`
+- **Job Title:** {{job.title}}
+- **Job Type:** {{job.type}}
+- **Requested By:** `{{job.username}}`
+- **Primary Conductor:** `{{hostID}}`
+- **Started:** {{display.started}}
+- **Completed:** {{display.completed}}
+- **Elapsed:** {{display.elapsed}}
+
+### Details:
+
+{{job.details}}

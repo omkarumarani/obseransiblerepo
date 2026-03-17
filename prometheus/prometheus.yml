@@ -1,0 +1,238 @@
+# prometheus/prometheus.yml
+# -------------------------
+# Prometheus configuration for the Observability Learning project.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT PROMETHEUS DOES
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Prometheus is a time-series database and monitoring system.
+# It works on a PULL model: instead of applications pushing data to it,
+# Prometheus periodically reaches out to configured targets and scrapes
+# a plain-text metrics endpoint (Prometheus exposition format).
+#
+# A scraped metrics endpoint looks like this:
+#
+#   # HELP http_requests_total Total HTTP requests handled by this service.
+#   # TYPE http_requests_total counter
+#   http_requests_total{http_method="GET",http_route="/ok",service_name="frontend-api"} 42
+#   http_requests_total{http_method="GET",http_route="/error",service_name="frontend-api"} 7
+#
+# Prometheus stores each unique combination of metric name + label values as a
+# separate TIME SERIES.  Every scrape appends a new data point (value + timestamp)
+# to each series.  Over time this builds a history you can query and graph.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW THIS FITS INTO OUR ARCHITECTURE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   frontend-api  ──OTLP/gRPC──┐
+#                               │   OTel Collector
+#                               ├── OTLP receiver (port 4317)
+#   backend-api   ──OTLP/gRPC──┘       │
+#                                   metrics pipeline
+#                                       │
+#                               prometheus exporter (port 8889)
+#                                       ▲
+#                               Prometheus scrapes every 15s
+#                                       │
+#                               Prometheus TSDB (port 9090)
+#
+# The apps PUSH metrics to the collector using OTLP (OpenTelemetry Protocol).
+# The collector translates those OTLP metrics into Prometheus format and
+# exposes them on a scrape endpoint.
+# Prometheus PULLS from that endpoint on a fixed interval and stores the data.
+#
+# You are learning two complementary models in one setup:
+#   Push model  →  OTel SDK → Collector (OTLP/gRPC)
+#   Pull model  →  Prometheus ← Collector (HTTP scrape)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# SCRAPE INTERVAL ALIGNMENT
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The apps are configured with OTEL_METRIC_EXPORT_INTERVAL_MS=15000 (15 s).
+# This means the collector receives fresh metric data from the apps every 15 s.
+# Prometheus scrapes every 15 s (global.scrape_interval below).
+#
+# These two intervals are intentionally aligned so that each Prometheus scrape
+# sees data that was recently pushed by the app.  If you set scrape_interval
+# shorter than the app export interval, some scrapes will see stale values.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GLOBAL SETTINGS
+# Defaults that apply to all scrape jobs unless overridden per-job.
+# ═════════════════════════════════════════════════════════════════════════════
+global:
+
+  # How often Prometheus calls each target's /metrics endpoint.
+  # Shorter = fresher data, more network + storage overhead.
+  # Longer  = less overhead, data can be stale.
+  # 15 s is a good default for a local development environment.
+  scrape_interval: 15s
+
+  # How often Prometheus evaluates alerting and recording rules.
+  # Must be >= scrape_interval.  We have no rules in this step, but
+  # the value still needs to be set.
+  evaluation_interval: 15s
+
+  # Labels added to every time series and alert produced by this
+  # Prometheus instance.  Useful when you have multiple Prometheus
+  # servers and need to identify which one a series came from.
+  external_labels:
+    environment: "local"
+    prometheus_instance: "obs-learning"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ALERTING
+# Tell Prometheus where its Alertmanager instance lives.
+# When a rule in rule_files fires, Prometheus sends the alert here.
+# ═════════════════════════════════════════════════════════════════════════════
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RULE FILES
+# Prometheus loads these files and evaluates the rules every evaluation_interval.
+# Rules define:
+#   - Alerting rules: fire an alert when an expression is true for a duration
+#   - Recording rules: pre-compute expensive queries and store as new metrics
+# ═════════════════════════════════════════════════════════════════════════════
+rule_files:
+  - "/etc/prometheus/alert-rules.yml"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SCRAPE CONFIGURATIONS
+# Each entry in scrape_configs defines a "job" — a set of targets to scrape
+# and how to scrape them.
+#
+# job_name becomes the "job" label on every time series collected here.
+# This is how you distinguish metrics from different sources in PromQL:
+#   http_requests_total{job="app-metrics"}
+# ═════════════════════════════════════════════════════════════════════════════
+scrape_configs:
+
+  # ── Job 1: Application metrics via OTel Collector ──────────────────────────
+  #
+  # This is the main job for your application observability.
+  #
+  # The OTel Collector receives OTLP metrics from frontend-api and backend-api,
+  # translates them into Prometheus exposition format, and serves them on
+  # port 8889.  Prometheus scrapes that single endpoint to collect metrics
+  # from BOTH application services in one shot.
+  #
+  # After scraping you will see metrics like:
+  #   http_requests_total{service_name="frontend-api", http_route="/ok", ...}
+  #   http_requests_total{service_name="backend-api",  http_route="/data", ...}
+  #   http_request_duration_seconds_bucket{service_name="frontend-api", le="0.1", ...}
+  #   datastore_queries_total{service_name="backend-api", ...}
+  #
+  # Key learning: "service_name" is an OTel resource attribute (set via
+  # OTEL_SERVICE_NAME in the app).  The collector's prometheus exporter
+  # converts resource attributes into Prometheus labels automatically via
+  # resource_to_telemetry_conversion (configured in otel-collector/config.yaml).
+  # Without that setting, you would not see service_name as a label and all
+  # metrics from both services would be indistinguishable.
+  - job_name: "app-metrics"
+
+    # scrape_interval can override the global default per job.
+    # Here we keep it the same as global for simplicity.
+    scrape_interval: 15s
+
+    static_configs:
+      - targets:
+          # Collector service name on the obs-net Docker network.
+          # Port 8889 is the prometheus exporter endpoint in the collector.
+          # Docker DNS resolves "otel-collector" to the container's IP.
+          - "otel-collector:8889"
+        labels:
+          # Extra static labels added to every time series from this job.
+          # "source" makes it clear these metrics came through the collector.
+          source: "otel-collector-prometheus-exporter"
+
+
+  # ── Job 2: OpenTelemetry Collector self-metrics ─────────────────────────────
+  #
+  # The collector exposes its own internal metrics on port 8888.
+  # These are NOT application metrics — they describe the health of the
+  # telemetry pipeline itself.
+  #
+  # Useful metrics here include:
+  #   otelcol_receiver_accepted_metric_points   — how many metric points arrived
+  #   otelcol_exporter_sent_metric_points       — how many were exported
+  #   otelcol_processor_dropped_metric_points   — how many were dropped (e.g. OOM)
+  #   otelcol_exporter_queue_size               — how full the export queue is
+  #   otelcol_process_memory_rss                — collector memory usage
+  #
+  # This teaches an important SRE concept: you MUST monitor your monitoring
+  # system.  If the collector is dropping data or its queue is filling up,
+  # you need to know before you lose observability entirely.
+  #
+  # In production this is called "observability of the observability stack"
+  # or "meta-monitoring".
+  - job_name: "otel-collector-internal"
+
+    scrape_interval: 15s
+
+    static_configs:
+      - targets:
+          # Port 8888 is the collector's self-metrics endpoint.
+          # This is separate from the app metrics endpoint (8889).
+          - "otel-collector:8888"
+        labels:
+          source: "otel-collector-self"
+
+
+  # ── Job 3: Prometheus self-monitoring ──────────────────────────────────────
+  #
+  # Prometheus scrapes itself to expose its own performance metrics.
+  # This is standard practice — you can monitor scrape duration, rule
+  # evaluation time, TSDB size, and more.
+  #
+  # Useful metrics:
+  #   prometheus_tsdb_head_samples_appended_total  — ingestion rate
+  #   prometheus_target_scrape_duration_seconds    — how long each scrape takes
+  #   up{job="prometheus"}                         — is Prometheus itself up?
+  #
+  # "localhost:9090" works here because Prometheus is scraping itself from
+  # inside its own container.
+  - job_name: "prometheus"
+
+    scrape_interval: 30s   # self-metrics don't need to be as fresh
+
+    static_configs:
+      - targets:
+          - "localhost:9090"
+
+  # ── Job 4: Alertmanager self-monitoring ─────────────────────────────────────
+  #
+  # Monitor Alertmanager itself: alert counts, notification latency,
+  # silences, and the size of the notification queue.
+  #
+  # Useful metrics:
+  #   alertmanager_alerts_received_total       — alerts received from Prometheus
+  #   alertmanager_notifications_total         — notifications dispatched
+  #   alertmanager_notification_latency_seconds — time to deliver a notification
+  #   alertmanager_silences{state="active"}    — how many silences are set
+  - job_name: "alertmanager"
+
+    scrape_interval: 30s
+
+    static_configs:
+      - targets:
+          - "alertmanager:9093"
+        labels:
+          source: "alertmanager-self"
+
+  # ── Job 5: AIOps Bridge ─────────────────────────────────────────────────────
+  #
+  # The aiops-bridge emits its own metrics (incident counters, processing latency)
+  # via the OTel collector. The bridge traces also flow to Tempo.
+  # Metrics are collected through the same collector pipeline as the other apps.
+  # (No direct scrape needed — the bridge pushes to otel-collector like the APIs.)

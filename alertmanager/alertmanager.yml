@@ -1,0 +1,107 @@
+# alertmanager/alertmanager.yml
+# ─────────────────────────────────────────────────────────────
+# Prometheus Alertmanager configuration
+#
+# Alertmanager receives fired alerts from Prometheus and:
+#   1. Groups related alerts together (e.g., same service)
+#   2. Deduplicates repeated alerts (repeat_interval)
+#   3. Routes them to the correct receiver (webhook, email, Slack, etc.)
+#
+# In this AIOps integration:
+#   Prometheus → Alertmanager → aiops-bridge → xyOps tickets
+#
+# The aiops-bridge service:
+#   - Receives Alertmanager WebHook payloads (POST /webhook)
+#   - Creates/resolves xyOps incident tickets via xyOps REST API
+#   - Is fully OTel-instrumented → traces appear in Tempo
+#
+# To add Slack/email, add receivers below and route to them.
+# ─────────────────────────────────────────────────────────────
+
+global:
+  # How long to wait before declaring an alert "resolved" if
+  # Alertmanager stops hearing from Prometheus about it.
+  resolve_timeout: 5m
+
+  # (Optional) Default SMTP settings for email notifications.
+  # smtp_smarthost: 'smtp.example.com:587'
+  # smtp_from: 'alertmanager@example.com'
+
+# ── Routing tree ──────────────────────────────────────────────
+# All alerts flow through this tree.  The first matching route wins.
+route:
+  # Group alerts that share the same alertname + service_name together
+  # into a single notification instead of one per alert.
+  group_by: ['alertname', 'service_name', 'severity']
+
+  # Wait up to 30 seconds after the first alert fires before sending,
+  # in case more alerts arrive that should be batched together.
+  group_wait: 30s
+
+  # Wait 5 minutes before sending a notification for a group that
+  # already has an open alert (consolidates repeated firings).
+  group_interval: 5m
+
+  # Resend if the alert is still firing after 12 hours.
+  repeat_interval: 12h
+
+  # Default receiver: send everything to xyOps via the bridge
+  receiver: xyops-incidents
+
+  # ── Sub-routes ─────────────────────────────────────────────
+  routes:
+    # Critical alerts: skip group wait and fire immediately
+    - match:
+        severity: critical
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      receiver: xyops-incidents-critical
+
+    # OTel collector alerts: separate group (infra team)
+    - match:
+        alertname: CollectorDroppingData
+      receiver: xyops-incidents
+      group_wait: 1m
+
+# ── Inhibit rules ─────────────────────────────────────────────
+# If a critical alert is firing for a service, suppress the
+# warning-level alert for the same service (avoid double tickets).
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['service_name']
+
+# ── Receivers ─────────────────────────────────────────────────
+receivers:
+
+  # Standard incidents → xyOps via AIOps Bridge
+  - name: xyops-incidents
+    webhook_configs:
+      - url: 'http://aiops-bridge:9000/webhook'
+        send_resolved: true   # also send when alert resolves → closes ticket
+        http_config:
+          # No auth needed inside the private Docker network.
+          # In production: use bearer_token or mutual TLS.
+          follow_redirects: true
+        max_alerts: 20        # max alerts per group notification
+
+  # Critical incidents → same bridge but could route to PagerDuty/OpsGenie
+  - name: xyops-incidents-critical
+    webhook_configs:
+      - url: 'http://aiops-bridge:9000/webhook'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+        max_alerts: 20
+    # In enterprise, add a second receiver entry for pagerduty_configs:
+    # pagerduty_configs:
+    #   - routing_key: '<YOUR_PAGERDUTY_INTEGRATION_KEY>'
+    #     description: '{{ .CommonAnnotations.summary }}'
+
+# ── Templates ─────────────────────────────────────────────────
+# (Optional) Custom notification templates.
+# templates:
+#   - '/etc/alertmanager/templates/*.tmpl'

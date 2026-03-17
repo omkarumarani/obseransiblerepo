@@ -1,0 +1,11 @@
+# xyOps Data Export v1.0
+# Hostname: joemax
+# Date/Time: Tue Dec 16 2025 15:34:31 GMT-0800 (Pacific Standard Time)
+# Format: NDJSON
+
+# List: global/tags
+{"cmd":"listDelete","args":["global/tags",false]}
+{"key":"global/tags","value":{"page_size":100,"first_page":0,"last_page":0,"length":5,"type":"list"}}
+{"key":"global/tags/0","value":{"type":"list_page","items":[{"id":"important","title":"Important","icon":"alert-rhombus","username":"admin","modified":1754365754,"created":1754365754,"revision":1},{"id":"flag","title":"Flag","icon":"flag-checkered","username":"admin","modified":1754365754,"created":1754365754,"revision":1},{"id":"tmgvnrpm7em","title":"Severity 1","icon":"alert","notes":"","username":"admin","modified":1760754503,"created":1760754503,"revision":1},{"id":"tmgvnseb6f2","title":"Needs Triage","icon":"account-badge","notes":"","username":"admin","modified":1760754535,"created":1760754535,"revision":1},{"id":"tmgvnw9kkga","title":"Severity 2","icon":"alert-outline","notes":"","username":"admin","modified":1760754715,"created":1760754715,"revision":1}]}}
+
+# End of file

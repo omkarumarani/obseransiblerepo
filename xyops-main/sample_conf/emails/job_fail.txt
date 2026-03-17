@@ -1,0 +1,37 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: 🛑 {{config.client.name}} Job Failed: {{event.title}} -->
+<!-- Title: Job Failed -->
+<!-- Button: View Details | {{links.job_details}} -->
+
+The following {{config.client.name}} job has failed with code: **{{job.code}}**
+
+- **Job ID:** `{{job.id}}`
+- **Error Code:** `{{job.code}}`
+- **Event:** {{event.title}}
+- **Category:** {{category.title}}
+- **Plugin:** {{plugin.title}}
+- **Server:** {{nice_server}}
+- **PID:** {{job.pid}}
+- **Completed:** {{display.date_time}}
+- **Elapsed Time:** {{display.elapsed}}
+- **Performance Metrics:** `{{display.perf}}`
+- **Avg. Memory Usage:** {{display.mem}}
+- **Avg. CPU Usage:** {{display.cpu}}
+
+### Error Description:
+{{job.description}}
+
+### Links:
+- [Job Details]({{links.job_details}})
+- [Download Log]({{links.job_log}}) ({{display.log_size}})
+
+### Job Output:
+```text
+{{log_excerpt}}
+```
+
+### User Content:
+{{user_content}}
+
+### Event Notes:
+{{job.notes}}

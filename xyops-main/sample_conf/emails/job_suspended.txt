@@ -1,0 +1,22 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: ⏱️ {{config.client.name}} Job Suspended: {{event.title}} -->
+<!-- Title: Job Suspended -->
+<!-- Button: Resume Job | {{links.job_details}}&resume=1 -->
+
+The following {{config.client.name}} job is **suspended**, and is awaiting manual user intervention:
+
+- **Job ID:** `{{job.id}}`
+- **Event:** {{event.title}}
+- **Category:** {{category.title}}
+- **Plugin:** {{plugin.title}}
+- **Server:** {{nice_server}}
+- **PID:** {{job.pid}}
+- **Elapsed Time:** {{display.elapsed}}
+- **Avg. Memory Usage:** {{display.mem}}
+- **Avg. CPU Usage:** {{display.cpu}}
+
+### Links:
+- [Job Details]({{links.job_details}})
+
+### Event Notes:
+{{job.notes}}

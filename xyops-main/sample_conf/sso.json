@@ -1,0 +1,22 @@
+{
+	"enabled": false,
+	"whitelist": ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fd00::/8", "169.254.0.0/16", "fe80::/10"],
+	"header_map": {
+		"username": "x-forwarded-user",
+		"full_name": "x-forwarded-user",
+		"email": "x-forwarded-email",
+		"groups": "x-forwarded-groups"
+	},
+	"cleanup_username": true,
+	"cleanup_full_name": true,
+	"group_role_map": {
+		"pixlcore:owners": []
+	},
+	"group_privilege_map": {
+		"pixlcore:owners": ["admin"]
+	},
+	"replace_roles": false,
+	"replace_privileges": false,
+	"admin_bootstrap": "",
+	"logout_url": "/oauth2/sign_out?rd=https%3A%2F%2Fgithub.com%2Flogout"
+}

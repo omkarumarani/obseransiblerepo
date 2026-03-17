@@ -1,0 +1,35 @@
+<!-- To: {{email_to}} -->
+<!-- Subject: ⚠️ {{config.client.name}} Alert: {{nice_server}}: {{def.title}} -->
+<!-- Title: New Alert -->
+<!-- Button: View Alert | {{links.alert_url}} -->
+
+The following {{config.client.name}} alert has fired: **{{def.title}}**
+
+- **Message:** {{alert.message}}
+- **Server:** {{nice_server}}
+- **Hostname:** {{params.hostname}}
+- **IP Address:** {{nice_ip}}
+- **Groups:** {{nice_groups}}
+- **Date/Time:** {{date_time}}
+- **Expression:** `{{def.expression}}`
+
+### Links:
+- [Alert Detail View]({{links.alert_url}})
+- [Live Server View]({{links.server_url}})
+
+### Active Jobs:
+{{nice_active_jobs}}
+
+### Alert Notes:
+{{nice_notes}}
+
+### Server Information:
+- **CPU Load Average:** {{nice_load_avg}}
+- **CPU Type:** {{nice_cpu}}
+- **CPU Cores:** {{params.data.cpu.cores}}
+- **Virtualization:** {{nice_virt}}
+- **Total Memory:** {{nice_mem_total}}
+- **Available Memory:** {{nice_mem_avail}}
+- **Disk Usage (Root):** {{params.data.mounts.root.use}}%
+- **Operating System:** {{nice_os}}
+- **Uptime:** {{nice_uptime}}
