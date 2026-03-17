@@ -394,11 +394,22 @@ async def _startup() -> None:
     logger.info("AIOps Bridge started  xyops_url=%s", XYOPS_URL)
     # Wire pipeline agents to the shared http client
     init_pipeline(_http, _xyops_post)
-    # Register the visual agent-to-agent workflow in xyOps Scheduler → Workflows
-    try:
-        await ensure_aiops_workflow(_xyops_post, _xyops_get)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not register AIOps workflow in xyOps: %s", exc)
+    # Register the visual agent-to-agent workflow in xyOps — run as background
+    # task with retries so a slow DNS startup doesn't cause permanent failure.
+    async def _register_workflow() -> None:
+        for attempt in range(12):  # retry up to ~60 s
+            try:
+                await ensure_aiops_workflow(_xyops_post, _xyops_get)
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Could not register AIOps workflow (attempt %d/12): %s",
+                    attempt + 1, exc,
+                )
+                await asyncio.sleep(5)
+        logger.error("Gave up registering AIOps workflow after 12 attempts")
+
+    asyncio.create_task(_register_workflow())
     # Initialise Gitea (local git server for playbook PR approvals) — non-blocking background task
     try:
         from .git_client import ensure_gitea_setup
