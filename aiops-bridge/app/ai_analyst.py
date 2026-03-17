@@ -228,16 +228,22 @@ Respond with this exact JSON schema:
     "blast_radius": "description of impact scope"
   }},
   "confidence": "high|medium|low",
-  "ansible_playbook": "full YAML ansible playbook content as a string (use \\n for newlines)",
+  "ansible_playbook": "Complete YAML playbook string (use \\n for newlines). Structure: (1) Play 1 named 'Pre-validation: Assert baseline state' with pre_tasks using ansible.builtin.assert to check current service state, (2) Play 2 named 'Remediate {service_name}' with main tasks for the fix plus notify handlers, (3) post_tasks using ansible.builtin.assert to verify recovery, (4) Play 3 named 'Rollback' with tasks that revert all changes if needed. Use -i localhost, --connection=local compatible tasks only.",
   "ansible_description": "1-sentence description of what the playbook does",
+  "test_cases": [
+    {{"id": "TC-PRE-1", "name": "Assert service is reachable", "assertion": "HTTP GET /health returns 200", "phase": "pre"}},
+    {{"id": "TC-PRE-2", "name": "Assert error rate below critical threshold", "assertion": "error_rate metric available and not zero", "phase": "pre"}},
+    {{"id": "TC-POST-1", "name": "Verify error rate recovered", "assertion": "error_rate < 1% after remediation", "phase": "post"}},
+    {{"id": "TC-POST-2", "name": "Verify service endpoints responding", "assertion": "HTTP 200 in < 500ms after restart", "phase": "post"}}
+  ],
   "pr_description": "GitHub PR description (markdown) for the code/config change that would prevent recurrence",
   "pr_title": "Short PR title (under 72 chars)",
-  "test_plan": [
-    "Step 1: ...",
-    "Step 2: ..."
-  ],
   "estimated_fix_time_minutes": 15,
-  "rollback_steps": ["Step 1: ...", "Step 2: ..."]
+  "rollback_steps": [
+    "Step 1: Run the Rollback play in the playbook: ansible-playbook playbook.yml --tags rollback",
+    "Step 2: Verify rollback by checking service health endpoint",
+    "Step 3: Monitor error rate for 5 minutes to confirm stability"
+  ]
 }}"""
 
     if _USE_OPENAI:
@@ -375,8 +381,32 @@ def build_enriched_ticket_body(
             body += analysis["ansible_playbook"]
             body += "\n```\n\n"
 
-        # ── Test plan ─────────────────────────────────────────
-        if analysis.get("test_plan"):
+        # ── Test plan / test cases ────────────────────────────────────────
+        if analysis.get("test_cases"):
+            cases = analysis["test_cases"]
+            pre_cases  = [tc for tc in cases if tc.get("phase") == "pre"]
+            post_cases = [tc for tc in cases if tc.get("phase") == "post"]
+            body += "### 🧪 Test Cases\n\n"
+            if pre_cases:
+                body += "**Pre-execution validation:**\n\n"
+                for tc in pre_cases:
+                    body += (
+                        f"- [ ] `{tc.get('id', '')}` **{tc.get('name', '')}**"
+                        f" — _{tc.get('assertion', '')}_\n"
+                    )
+                body += "\n"
+            if post_cases:
+                body += "**Post-execution verification:**\n\n"
+                for tc in post_cases:
+                    body += (
+                        f"- [ ] `{tc.get('id', '')}` **{tc.get('name', '')}**"
+                        f" — _{tc.get('assertion', '')}_\n"
+                    )
+                body += "\n"
+            est = analysis.get("estimated_fix_time_minutes")
+            if est:
+                body += f"_Estimated remediation time: {est} minutes_\n\n"
+        elif analysis.get("test_plan"):
             body += "### ✅ Playbook Test Plan (dry-run)\n\n"
             for step in analysis["test_plan"]:
                 body += f"1. {step}\n" if not step.startswith("Step") else f"- {step}\n"

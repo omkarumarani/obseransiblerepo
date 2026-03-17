@@ -719,6 +719,22 @@ services:
       # ── Approval workflow ─────────────────────────────
       REQUIRE_APPROVAL: "true"     # set false to auto-execute without human sign-off
       ANSIBLE_RUNNER_URL: "http://ansible-runner:8080"
+      BRIDGE_INTERNAL_URL: "http://aiops-bridge:9000"
+
+      # ── Gitea git integration ────────────────────────────────
+      GITEA_URL: "http://gitea:3000"
+      GITEA_ADMIN_USER: "aiops"
+      GITEA_ADMIN_PASS: "Aiops1234!"
+      GITEA_ORG: "aiops-org"
+      GITEA_REPO: "ansible-playbooks"
+      GITEA_ENABLED: "true"
+
+      # ── Workflow step visibility ─────────────────────────────
+      # Each xyOps workflow node stays orange for this many seconds so you
+      # can watch the canvas step-by-step.  Set to 0 to disable.
+      WORKFLOW_STEP_DELAY_SECONDS: "5"
+      # Must match the xyOps container hostname (docker-compose: hostname: xyops)
+      XYOPS_SERVER_HOSTNAME: "xyops"
 
       # ── OTel identity ──────────────────────────────────────
       OTEL_SERVICE_NAME: "aiops-bridge"
@@ -839,6 +855,51 @@ services:
       - obs-net
     restart: unless-stopped
 
+  # ──────────────────────────────────────────────────────────
+  # Gitea  (local self-hosted Git server)
+  #
+  # Stores AI-generated Ansible playbooks as pull-request branches.
+  # Every remediation approval creates a branch + PR in Gitea for audit
+  # trail and code review alongside the xyOps change ticket.
+  #
+  # First-time setup is automated by aiops-bridge on startup:
+  #   1. Bridge POSTs to /install to create admin user (aiops / Aiops1234!)
+  #   2. Bridge creates org "aiops-org" and repo "ansible-playbooks"
+  #   3. Bridge generates an API token used for all subsequent calls
+  #
+  # Ports
+  # ─────
+  #   3002  Gitea web UI  http://localhost:3002
+  #         Login: aiops / Aiops1234!
+  #         Repo:  http://localhost:3002/aiops-org/ansible-playbooks
+  #         PRs:   http://localhost:3002/aiops-org/ansible-playbooks/pulls
+  # ──────────────────────────────────────────────────────────
+  gitea:
+    image: gitea/gitea:1.21
+    container_name: gitea
+    hostname: gitea
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__server__DOMAIN=localhost
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__ROOT_URL=http://localhost:3002/
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__database__PATH=/data/gitea/gitea.db
+      - GITEA__log__LEVEL=Warn
+      - GITEA__service__DISABLE_REGISTRATION=false
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__security__SECRET_KEY=aiops_local_dev_secret_key_for_gitea_bridge_2024
+    volumes:
+      - gitea-data:/data
+      - ./gitea/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    ports:
+      - "3002:3000"    # Gitea web UI  http://localhost:3002
+    networks:
+      - obs-net
+    restart: unless-stopped
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Named volumes
 # Docker manages these on the host.  They survive "docker compose down" but are
@@ -863,4 +924,6 @@ volumes:
   troublemaker-data:
     driver: local
   xyops-data:
+    driver: local
+  gitea-data:
     driver: local

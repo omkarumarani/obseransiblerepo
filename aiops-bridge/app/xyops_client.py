@@ -38,11 +38,18 @@ Two responsibilities
 ────────────────────────────────────────────────────────────────
 """
 
+import json as _json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger("aiops-bridge.xyops_client")
+
+# ── Target server for all workflow job nodes ──────────────────────────────────
+# Must match the xyOps container hostname (docker-compose: hostname: xyops).
+# Override via XYOPS_SERVER_HOSTNAME env var if your setup differs.
+_WORKFLOW_TARGET: str = os.getenv("XYOPS_SERVER_HOSTNAME", "xyops")
 
 # ── Step status icons ─────────────────────────────────────────────────────────
 _STATUS_ICON: dict[str, str] = {
@@ -189,8 +196,8 @@ _NODES: list[dict[str, Any]] = [
         "data": {
             "label": "Agent 1 — Pipeline Start",
             "plugin": "httpplug",
-            "targets": ["main"],
-            "algo": "random",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
             "category": "general",
             "icon": "alarm",
             "params": {
@@ -212,8 +219,8 @@ _NODES: list[dict[str, Any]] = [
         "data": {
             "label": "Agent 2 — Loki Log Fetcher",
             "plugin": "httpplug",
-            "targets": ["main"],
-            "algo": "random",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
             "category": "general",
             "icon": "search",
             "params": {
@@ -235,8 +242,8 @@ _NODES: list[dict[str, Any]] = [
         "data": {
             "label": "Agent 3 — Prometheus Analyst",
             "plugin": "httpplug",
-            "targets": ["main"],
-            "algo": "random",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
             "category": "general",
             "icon": "chart",
             "params": {
@@ -258,8 +265,8 @@ _NODES: list[dict[str, Any]] = [
         "data": {
             "label": "Agent 4 — Claude AI Analyst",
             "plugin": "httpplug",
-            "targets": ["main"],
-            "algo": "random",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
             "category": "general",
             "icon": "cpu",
             "params": {
@@ -281,8 +288,8 @@ _NODES: list[dict[str, Any]] = [
         "data": {
             "label": "Agent 5 — Incident Scribe",
             "plugin": "httpplug",
-            "targets": ["main"],
-            "algo": "random",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
             "category": "general",
             "icon": "edit",
             "params": {
@@ -304,8 +311,8 @@ _NODES: list[dict[str, Any]] = [
         "data": {
             "label": "Agent 6 — Approval Gateway",
             "plugin": "httpplug",
-            "targets": ["main"],
-            "algo": "random",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
             "category": "general",
             "icon": "check",
             "params": {
@@ -393,3 +400,66 @@ async def ensure_aiops_workflow(xyops_post: _PostFn, xyops_get: Callable) -> Non
             "Scheduler → Workflows → '%s'",
             action, _WORKFLOW_TITLE,
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. Approval ticket action events (Approve / Decline buttons)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def create_approval_events(
+    approval_id: str,
+    bridge_host: str,
+    xyops_post: _PostFn,
+) -> tuple[str, str]:
+    """
+    Create two one-shot httpplug events in xyOps for this approval.
+    These appear as clickable ▶ Run buttons on the approval ticket.
+
+    Returns (approve_event_id, decline_event_id).
+    """
+    short = approval_id.replace("-", "")[:10]
+    approve_id = f"aiops_ap_{short}"
+    decline_id = f"aiops_dc_{short}"
+
+    for event_id, label, icon, approved_val in [
+        (approve_id, "✅ Approve Remediation", "check", True),
+        (decline_id, "❌ Decline Remediation", "x",     False),
+    ]:
+        data_body = _json.dumps({
+            "approved": approved_val,
+            "decided_by": "xyops_user",
+            "notes": (
+                "Approved via xyOps ticket button"
+                if approved_val else
+                "Declined via xyOps ticket button"
+            ),
+        })
+        event_payload: dict[str, Any] = {
+            "id": event_id,
+            "title": f"{label} — {approval_id[:8]}",
+            "plugin": "httpplug",
+            "category": "general",
+            "icon": icon,
+            "enabled": True,
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
+            "params": {
+                "method": "POST",
+                "url": f"{bridge_host}/approval/{approval_id}/decision",
+                "headers": "Content-Type: application/json",
+                "data": data_body,
+                "success_match": "status",
+                "timeout": "30",
+            },
+        }
+        result = await xyops_post("/api/app/create_event/v1", event_payload)
+        if result.get("error") or result.get("code", 0) != 0:
+            logger.warning(
+                "Failed to create approval event %s: %s",
+                event_id,
+                result.get("description") or result.get("error"),
+            )
+        else:
+            logger.info("Created approval event %s", event_id)
+
+    return approve_id, decline_id

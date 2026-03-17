@@ -32,6 +32,7 @@ GET  /pipeline/session/{id}    — inspect current session state (debug)
 ────────────────────────────────────────────────────────────────
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -61,6 +62,9 @@ XYOPS_URL: str = os.getenv("XYOPS_URL", "http://xyops:5522")
 REQUIRE_APPROVAL: bool = os.getenv("REQUIRE_APPROVAL", "true").lower() != "false"
 APPROVAL_SEVERITY_THRESHOLD: set[str] = {"warning", "critical"}
 SESSION_TTL_SECONDS: int = 3600  # sessions expire after 1 hour
+# Seconds each workflow node visibly "runs" before completing — lets you watch
+# the xyOps canvas step by step.  Set to 0 to disable.
+WORKFLOW_STEP_DELAY: int = int(os.getenv("WORKFLOW_STEP_DELAY_SECONDS", "5"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -254,6 +258,7 @@ async def pipeline_start(req: StartRequest) -> dict:
         session_id, session.ticket_num, session.ticket_id,
         req.service_name, req.alert_name,
     )
+    await asyncio.sleep(WORKFLOW_STEP_DELAY)
     return {
         "status": "started",
         "session_id": session_id,
@@ -300,6 +305,7 @@ async def agent_logs(req: AgentRequest) -> dict:
     )
 
     logger.info("Agent logs complete  session=%s  lines=%d", req.session_id, log_lines)
+    await asyncio.sleep(WORKFLOW_STEP_DELAY)
     return {
         "status": "ok",
         "session_id": req.session_id,
@@ -352,6 +358,7 @@ async def agent_metrics(req: AgentRequest) -> dict:
     )
 
     logger.info("Agent metrics complete  session=%s  %s", req.session_id, metrics_str)
+    await asyncio.sleep(WORKFLOW_STEP_DELAY)
     return {
         "status": "ok",
         "session_id": req.session_id,
@@ -406,6 +413,7 @@ async def agent_analyze(req: AgentRequest) -> dict:
             "Agent analyze complete  session=%s  confidence=%s  playbook=%s",
             req.session_id, confidence, has_playbook,
         )
+        await asyncio.sleep(WORKFLOW_STEP_DELAY)
         return {
             "status": "ok",
             "session_id": req.session_id,
@@ -428,6 +436,7 @@ async def agent_analyze(req: AgentRequest) -> dict:
             _post,
         )
         session.stage = "analyzed"
+        await asyncio.sleep(WORKFLOW_STEP_DELAY)
         return {
             "status": "ok",
             "session_id": req.session_id,
@@ -486,6 +495,7 @@ async def agent_ticket(req: AgentRequest) -> dict:
         "Agent ticket complete  session=%s  ticket=#%s  words=%d",
         req.session_id, session.ticket_num, word_count,
     )
+    await asyncio.sleep(WORKFLOW_STEP_DELAY)
     return {
         "status": "ok",
         "session_id": req.session_id,
@@ -543,6 +553,7 @@ async def agent_approval(req: AgentRequest) -> dict:
             bridge_trace_id=session.bridge_trace_id,
             xyops_post=_post,
             xyops_url=XYOPS_URL,
+            http=_http,
         )
         session.approval_ticket_id = approval_req.approval_ticket_id
         session.approval_ticket_num = approval_req.approval_ticket_num
@@ -560,6 +571,7 @@ async def agent_approval(req: AgentRequest) -> dict:
             "Agent approval complete  session=%s  approval_id=%s  approval_ticket=#%s",
             req.session_id, session.approval_id, session.approval_ticket_num,
         )
+        await asyncio.sleep(WORKFLOW_STEP_DELAY)
         return {
             "status": "ok",
             "session_id": req.session_id,
@@ -584,6 +596,7 @@ async def agent_approval(req: AgentRequest) -> dict:
             "Agent approval skipped  session=%s  reason=no_playbook_or_not_required",
             req.session_id,
         )
+        await asyncio.sleep(WORKFLOW_STEP_DELAY)
         return {
             "status": "ok",
             "session_id": req.session_id,

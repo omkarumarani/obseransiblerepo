@@ -42,6 +42,15 @@ from typing import Any
 
 import httpx
 
+from .git_client import (
+    GITEA_ENABLED,
+    close_pull_request,
+    commit_playbook,
+    create_pull_request,
+    merge_pull_request,
+)
+from .xyops_client import create_approval_events
+
 logger = logging.getLogger("aiops-bridge.approval")
 
 ANSIBLE_RUNNER_URL: str = os.getenv("ANSIBLE_RUNNER_URL", "http://ansible-runner:8080")
@@ -74,6 +83,15 @@ class ApprovalRequest:
     # xyOps approval-gate ticket ID and number
     approval_ticket_id: str = ""
     approval_ticket_num: int = 0
+    # xyOps event IDs for the Approve / Decline ticket buttons
+    approve_event_id: str = ""
+    decline_event_id: str = ""
+    # Structured test cases from AI analysis
+    test_cases: list[dict] = field(default_factory=list)
+    # Gitea PR details
+    gitea_pr_url: str = ""
+    gitea_pr_num: int = 0
+    gitea_branch: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -90,6 +108,7 @@ async def request_approval(
     bridge_trace_id: str,
     xyops_post,   # callable: async (path, body) -> dict
     xyops_url: str,
+    http: "httpx.AsyncClient | None" = None,
 ) -> ApprovalRequest:
     """
     Create an ApprovalRequest and open a gating ticket in xyOps.
@@ -102,6 +121,7 @@ async def request_approval(
     playbook = analysis.get("ansible_playbook", "")
     description = analysis.get("ansible_description", "")
     test_plan = analysis.get("test_plan", [])
+    test_cases = analysis.get("test_cases", [])
     rca_summary = analysis.get("rca_summary", "")
     pr_title = analysis.get("pr_title", "")
     pr_description = analysis.get("pr_description", "")
@@ -117,10 +137,52 @@ async def request_approval(
         ansible_playbook=playbook,
         ansible_description=description,
         test_plan=test_plan,
+        test_cases=test_cases,
         rca_summary=rca_summary,
         bridge_trace_id=bridge_trace_id,
     )
     _pending[approval_id] = req
+
+    # ── Create Approve / Decline events in xyOps (ticket action buttons) ──────
+    bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://aiops-bridge:9000")
+    try:
+        approve_evt, decline_evt = await create_approval_events(
+            approval_id, bridge_host, xyops_post
+        )
+        req.approve_event_id = approve_evt
+        req.decline_event_id = decline_evt
+    except Exception as exc:
+        logger.warning("Could not create approval events: %s", exc)
+        approve_evt = ""
+        decline_evt = ""
+
+    # ── Gitea: commit playbook to a branch and open a PR ──────────────────────
+    if http and GITEA_ENABLED and playbook:
+        try:
+            git_info = await commit_playbook(
+                approval_id=approval_id,
+                playbook_yaml=playbook,
+                service_name=service_name,
+                alert_name=alert_name,
+                http=http,
+            )
+            if not git_info.get("error"):
+                req.gitea_branch = git_info.get("branch", "")
+                pr_info = await create_pull_request(
+                    branch=req.gitea_branch,
+                    service_name=service_name,
+                    alert_name=alert_name,
+                    rca_summary=rca_summary,
+                    approval_id=approval_id,
+                    http=http,
+                )
+                req.gitea_pr_url = pr_info.get("pr_url", "")
+                req.gitea_pr_num = pr_info.get("pr_number", 0)
+                logger.info(
+                    "Gitea PR #%d created  url=%s", req.gitea_pr_num, req.gitea_pr_url
+                )
+        except Exception as exc:
+            logger.warning("Gitea git commit/PR failed (non-fatal): %s", exc)
 
     # ── Build the approval ticket body ─────────────────────
     body = _build_approval_body(
@@ -133,12 +195,17 @@ async def request_approval(
         approval_id=approval_id,
     )
 
-    ticket_payload = {
+    ticket_payload: dict[str, Any] = {
         "subject": f"[APPROVAL REQUIRED] Remediate `{alert_name}` on `{service_name}` — {severity.upper()}",
         "body": body,
         "type": "change",   # xyOps "change" type = change management / approval
         "status": "open",
     }
+    if approve_evt and decline_evt:
+        ticket_payload["events"] = [
+            {"id": approve_evt},
+            {"id": decline_evt},
+        ]
 
     result = await xyops_post("/api/app/create_ticket/v1", ticket_payload)
     req.approval_ticket_id = result.get("ticket", {}).get("id", "")
@@ -191,6 +258,13 @@ async def process_decision(
         logger.info(
             "Approval %s DECLINED by %s  alert=%s", approval_id, decided_by, req.alert_name
         )
+        # Close the Gitea PR so the branch is cleanly rejected
+        if req.gitea_pr_num:
+            try:
+                await close_pull_request(req.gitea_pr_num, http)
+                logger.info("Gitea PR #%d closed (declined)", req.gitea_pr_num)
+            except Exception as exc:
+                logger.warning("Could not close Gitea PR: %s", exc)
         decline_msg = (
             f"## Remediation Declined\n\n"
             f"Declined by **{decided_by}** at {now}\n\n"
@@ -213,6 +287,13 @@ async def process_decision(
         "Approval %s APPROVED by %s  alert=%s — triggering Ansible",
         approval_id, decided_by, req.alert_name,
     )
+    # Merge the Gitea PR now that the human has approved
+    if req.gitea_pr_num:
+        try:
+            merged = await merge_pull_request(req.gitea_pr_num, http)
+            logger.info("Gitea PR #%d merged=%s", req.gitea_pr_num, merged)
+        except Exception as exc:
+            logger.warning("Could not merge Gitea PR: %s", exc)
     approve_msg = (
         f"## Remediation Approved\n\n"
         f"Approved by **{decided_by}** at {now}\n\n"
@@ -250,20 +331,62 @@ async def _execute_playbook(
     xyops_post,
 ) -> None:
     """
-    POST the playbook to the ansible-runner sidecar service and
-    record the result back in the xyOps approval ticket.
+    1. POST to /validate (dry-run with test cases) — post results to ticket.
+    2. POST to /run (real or simulated execution) — post final results.
     """
+    run_payload = {
+        "playbook_yaml": req.ansible_playbook,
+        "service_name": req.service_name,
+        "alert_name": req.alert_name,
+        "trace_id": req.bridge_trace_id,
+        "test_cases": req.test_cases,
+    }
+
+    # ── Step 1: Validate (dry-run) ──────────────────────────────────────────
     try:
-        run_payload = {
-            "playbook_yaml": req.ansible_playbook,
-            "service_name": req.service_name,
-            "alert_name": req.alert_name,
-            "trace_id": req.bridge_trace_id,
-        }
+        val_resp = await http.post(
+            f"{ANSIBLE_RUNNER_URL}/validate",
+            json=run_payload,
+            timeout=90.0,
+        )
+        if val_resp.status_code == 200:
+            val = val_resp.json()
+            test_results = val.get("test_results", [])
+            all_passed   = val.get("all_passed", True)
+            status_icon  = "✅" if all_passed else "⚠️"
+            passed_count = sum(1 for t in test_results if t.get("status") == "PASSED")
+            total_count  = len(test_results)
+
+            val_comment = (
+                f"## {status_icon} Pre-execution Validation ({passed_count}/{total_count} passed)\n\n"
+                f"| Test Case | Status | Detail |\n|---|---|---|\n"
+            )
+            for tc in test_results:
+                icon = "✅" if tc.get("status") == "PASSED" else "❌"
+                val_comment += (
+                    f"| `{tc.get('id', '?')}` {tc.get('name', '')} "
+                    f"| {icon} {tc.get('status', '?')} "
+                    f"| {tc.get('output', '')[:80]} |\n"
+                )
+            val_comment += f"\n```\n{val.get('stdout', '')[:1500]}\n```\n"
+            if not all_passed:
+                val_comment += "\n> ⚠️ Some pre-checks failed — playbook will still execute, review output carefully.\n"
+
+            await _update_approval_ticket(req=req, comment=val_comment, xyops_post=xyops_post)
+    except Exception as exc:
+        logger.warning("Validation step failed (non-fatal): %s", exc)
+        await _update_approval_ticket(
+            req=req,
+            comment=f"## ℹ️ Validation Skipped\n\n`{exc}`\n\nProceeding with execution.",
+            xyops_post=xyops_post,
+        )
+
+    # ── Step 2: Execute ───────────────────────────────────────────────────────
+    try:
         resp = await http.post(
             f"{ANSIBLE_RUNNER_URL}/run",
             json=run_payload,
-            timeout=120.0,  # playbooks can take a while
+            timeout=120.0,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -273,15 +396,31 @@ async def _execute_playbook(
             rc = result.get("return_code", -1)
             stdout = result.get("stdout", "")[:3000]
             status_icon = "✅" if rc == 0 else "❌"
+            test_results = result.get("test_results", [])
 
             comment = (
                 f"## {status_icon} Ansible Playbook Execution Result\n\n"
                 f"| Field | Value |\n|---|---|\n"
                 f"| **Return code** | `{rc}` |\n"
                 f"| **Duration** | {result.get('duration_seconds', '?')}s |\n"
+                f"| **Mode** | `{result.get('mode', 'simulated')}` |\n"
                 f"| **Executed at** | {datetime.now(timezone.utc).isoformat()} |\n\n"
-                f"### Output\n\n```\n{stdout}\n```\n"
             )
+            if test_results:
+                passed_count = sum(1 for t in test_results if t.get("status") == "PASSED")
+                comment += (
+                    f"### Test Results ({passed_count}/{len(test_results)} passed)\n\n"
+                    f"| Test Case | Status | Detail |\n|---|---|---|\n"
+                )
+                for tc in test_results:
+                    icon = "✅" if tc.get("status") == "PASSED" else "❌"
+                    comment += (
+                        f"| `{tc.get('id', '?')}` {tc.get('name', '')} "
+                        f"| {icon} {tc.get('status', '?')} "
+                        f"| {tc.get('output', '')[:80]} |\n"
+                    )
+                comment += "\n"
+            comment += f"### Output\n\n```\n{stdout}\n```\n"
             if rc != 0:
                 comment += (
                     "\n\n> ⚠️ Playbook failed. Review the output above. "
@@ -307,7 +446,6 @@ async def _execute_playbook(
 
     await _update_approval_ticket(req=req, comment=comment, xyops_post=xyops_post)
 
-    # Post a concise outcome line back to the original incident ticket
     rc = req.execution_result.get("return_code", -1) if req.execution_result else -1
     if rc == 0:
         outcome_status = "executed"
@@ -360,7 +498,7 @@ def _build_approval_body(
     xyops_url: str,
     approval_id: str,
 ) -> str:
-    bridge_host = "http://aiops-bridge:9000"
+    bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://aiops-bridge:9000")
 
     body = (
         f"## 🔐 Change Approval Required\n\n"
@@ -381,17 +519,50 @@ def _build_approval_body(
         f"```yaml\n{req.ansible_playbook}\n```\n\n"
     )
 
-    if req.test_plan:
-        body += "### Test Plan (what will be validated before real run)\n\n"
+    # ── Test cases (structured from AI) ───────────────────────────────────────
+    if req.test_cases:
+        pre_cases  = [tc for tc in req.test_cases if tc.get("phase") == "pre"]
+        post_cases = [tc for tc in req.test_cases if tc.get("phase") == "post"]
+        body += "### 🧪 Test Cases\n\n"
+        if pre_cases:
+            body += "**Pre-execution validation** (run before applying changes):\n\n"
+            for tc in pre_cases:
+                body += (
+                    f"- [ ] `{tc.get('id', '')}` **{tc.get('name', '')}**"
+                    f" — _{tc.get('assertion', '')}_\n"
+                )
+            body += "\n"
+        if post_cases:
+            body += "**Post-execution verification** (confirm recovery):\n\n"
+            for tc in post_cases:
+                body += (
+                    f"- [ ] `{tc.get('id', '')}` **{tc.get('name', '')}**"
+                    f" — _{tc.get('assertion', '')}_\n"
+                )
+            body += "\n"
+    elif req.test_plan:
+        body += "### ✅ Test Plan (what will be validated)\n\n"
         for step in req.test_plan:
             body += f"- {step}\n"
         body += "\n"
 
     if rollback_steps:
-        body += "### Rollback Steps (if playbook fails)\n\n"
-        for step in rollback_steps:
-            body += f"- {step}\n"
+        body += "### ⏪ Rollback Steps (automatic if playbook fails)\n\n"
+        for i, step in enumerate(rollback_steps, 1):
+            body += f"{i}. {step}\n"
         body += "\n"
+
+    if req.gitea_pr_url:
+        from .git_client import GITEA_ORG, GITEA_REPO, GITEA_URL  # noqa: PLC0415
+        body += (
+            f"### 📁 Gitea — Ansible Playbook PR\n\n"
+            f"The playbook YAML has been committed for code review before execution:\n\n"
+            f"| Field | Value |\n|---|---|\n"
+            f"| **Pull Request** | [View PR #{req.gitea_pr_num}]({req.gitea_pr_url}) |\n"
+            f"| **Branch** | `{req.gitea_branch}` |\n"
+            f"| **Repository** | {GITEA_URL}/{GITEA_ORG}/{GITEA_REPO} |\n\n"
+            f"Review the YAML diff in Gitea before approving.\n\n"
+        )
 
     if pr_title:
         body += (
@@ -401,10 +572,25 @@ def _build_approval_body(
             f"{pr_description}\n\n"
         )
 
+    # ── Approve / Decline instructions ────────────────────────────────────────
+    body += "---\n\n## ▶️ HOW TO APPROVE\n\n"
+
+    if req.approve_event_id and req.decline_event_id:
+        body += (
+            f"This ticket has two runnable actions attached "
+            f"(scroll up to the **Events** section):\n\n"
+            f"| Button | Action |\n"
+            f"|---|---|\n"
+            f"| **▶ Run \"{req.approve_event_id}\"** | Executes the Ansible playbook via ansible-runner |\n"
+            f"| **▶ Run \"{req.decline_event_id}\"** | Closes this ticket without making any changes |\n\n"
+            f"Click **▶ Run** on the appropriate event above.\n\n"
+            f"---\n\n"
+            f"_Fallback: use the curl commands below if the events don't appear._\n\n"
+        )
+    else:
+        body += "Use the commands below to approve or decline:\n\n"
+
     body += (
-        f"---\n\n"
-        f"## ▶️ HOW TO APPROVE\n\n"
-        f"To approve and execute the playbook, send:\n\n"
         f"```powershell\n"
         f'$body = \'{{"approved": true, "decided_by": "YOUR_NAME", "notes": "Reviewed and approved"}}\'\n'
         f"Invoke-RestMethod -Method POST `\n"

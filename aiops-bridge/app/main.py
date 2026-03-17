@@ -399,6 +399,12 @@ async def _startup() -> None:
         await ensure_aiops_workflow(_xyops_post, _xyops_get)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not register AIOps workflow in xyOps: %s", exc)
+    # Initialise Gitea (local git server for playbook PR approvals) — non-blocking background task
+    try:
+        from .git_client import ensure_gitea_setup
+        asyncio.create_task(ensure_gitea_setup(_http))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gitea setup failed (non-fatal): %s", exc)
 
 
 @app.on_event("shutdown")
