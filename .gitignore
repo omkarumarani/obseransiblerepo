@@ -40,4 +40,5 @@ Thumbs.db
 
 # Secrets (never commit real keys)
 *.env.local
+.env
 secrets.yaml
