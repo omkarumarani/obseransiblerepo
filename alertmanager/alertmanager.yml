@@ -8,9 +8,9 @@
 #   3. Routes them to the correct receiver (webhook, email, Slack, etc.)
 #
 # In this AIOps integration:
-#   Prometheus → Alertmanager → aiops-bridge → xyOps tickets
+#   Prometheus → Alertmanager → compute-agent → xyOps tickets
 #
-# The aiops-bridge service:
+# The compute-agent service:
 #   - Receives Alertmanager WebHook payloads (POST /webhook)
 #   - Creates/resolves xyOps incident tickets via xyOps REST API
 #   - Is fully OTel-instrumented → traces appear in Tempo
@@ -50,7 +50,17 @@ route:
 
   # ── Sub-routes ─────────────────────────────────────────────
   routes:
-    # Critical alerts: skip group wait and fire immediately
+    # Storage alerts (domain=storage) → storage-agent
+    # Must be first so it matches before the generic critical route.
+    - match:
+        domain: storage
+      receiver: storage-incidents
+      group_by: ['alertname', 'domain', 'osd_id', 'pool', 'pvc']
+      group_wait: 20s
+      group_interval: 2m
+      repeat_interval: 4h
+
+    # Critical compute alerts: skip group wait and fire immediately
     - match:
         severity: critical
       group_wait: 10s
@@ -77,10 +87,10 @@ inhibit_rules:
 # ── Receivers ─────────────────────────────────────────────────
 receivers:
 
-  # Standard incidents → xyOps via AIOps Bridge
+  # Standard incidents → xyOps via Compute Agent
   - name: xyops-incidents
     webhook_configs:
-      - url: 'http://aiops-bridge:9000/webhook'
+      - url: 'http://compute-agent:9000/webhook'
         send_resolved: true   # also send when alert resolves → closes ticket
         http_config:
           # No auth needed inside the private Docker network.
@@ -88,10 +98,10 @@ receivers:
           follow_redirects: true
         max_alerts: 20        # max alerts per group notification
 
-  # Critical incidents → same bridge but could route to PagerDuty/OpsGenie
+  # Critical incidents → same compute agent but could route to PagerDuty/OpsGenie
   - name: xyops-incidents-critical
     webhook_configs:
-      - url: 'http://aiops-bridge:9000/webhook'
+      - url: 'http://compute-agent:9000/webhook'
         send_resolved: true
         http_config:
           follow_redirects: true
@@ -100,6 +110,17 @@ receivers:
     # pagerduty_configs:
     #   - routing_key: '<YOUR_PAGERDUTY_INTEGRATION_KEY>'
     #     description: '{{ .CommonAnnotations.summary }}'
+
+  # Storage incidents → storage-agent
+  # The storage-agent runs its own AI analysis and xyOps pipeline
+  # specialised for Ceph OSD / pool / PVC remediation.
+  - name: storage-incidents
+    webhook_configs:
+      - url: 'http://storage-agent:9001/webhook'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+        max_alerts: 20
 
 # ── Templates ─────────────────────────────────────────────────
 # (Optional) Custom notification templates.

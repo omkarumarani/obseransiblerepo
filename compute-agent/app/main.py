@@ -1,7 +1,7 @@
 """
-aiops-bridge/app/main.py
+compute-agent/app/main.py
 ────────────────────────────────────────────────────────────────
-AIOps Bridge — Prometheus Alertmanager → xyOps Incident Bridge
+Compute Agent — Prometheus Alertmanager → xyOps Incident Bridge
 ────────────────────────────────────────────────────────────────
 
 What this service does
@@ -44,7 +44,7 @@ Alertmanager webhook payload format (v4):
 
 Environment variables
 ─────────────────────
-  OTEL_SERVICE_NAME            aiops-bridge
+  OTEL_SERVICE_NAME            compute-agent
   OTEL_EXPORTER_OTLP_ENDPOINT  http://otel-collector:4317
   OTEL_EXPORTER_OTLP_PROTOCOL  grpc
   XYOPS_URL                    http://xyops:5522
@@ -104,7 +104,7 @@ from .pipeline import init_pipeline, pipeline_router
 
 # ── Logging (basic setup before OTel; enrichment happens inside setup_telemetry) ──
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("aiops-bridge")
+logger = logging.getLogger("compute-agent")
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -117,7 +117,7 @@ app = FastAPI(
 )
 
 # ── Bootstrap OTel (pass app so FastAPIInstrumentor can wrap it) ───────────────
-setup_telemetry(fastapi_app=app, service_name="aiops-bridge")
+setup_telemetry(fastapi_app=app, service_name="compute-agent")
 tracer = get_tracer()
 
 # ── Register agent-to-agent pipeline endpoints ────────────────────────────────
@@ -140,11 +140,34 @@ async def health() -> dict:
     """Liveness probe — excluded from traces by OTel instrumentation."""
     return {
         "status": "ok",
-        "service": "aiops-bridge",
+        "service": "compute-agent",
         "xyops_url": XYOPS_URL,
         "ai_enabled": AI_ENABLED,
         "approval_required": REQUIRE_APPROVAL,
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """
+    Prometheus scrape endpoint — exposes compute agent action counters.
+
+    Scraped by Prometheus job 'compute-agent' (prometheus.yml).
+    Feeds the 'Agentic AI Operations' Grafana dashboard.
+
+    Metrics exposed:
+      compute_agent_actions_total{action_type}
+      compute_agent_restarts_total
+      compute_agent_noisy_neighbour_reductions_total
+      compute_agent_escalations_total
+      compute_agent_autonomous_actions_total
+      compute_agent_approval_required_total
+      compute_agent_ai_analysis_total{status}
+      compute_agent_webhook_received_total{group_status}
+      compute_agent_alert_processing_seconds (histogram)
+    """
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest, REGISTRY
+    return Response(content=generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -240,6 +263,10 @@ async def alertmanager_webhook(request: Request) -> dict:
     # Record the raw webhook receipt
     if webhook_counter is not None:
         webhook_counter.add(1, {"group_status": group_status})
+
+    # Also record in prometheus-client counter (for direct scrape endpoint)
+    from .telemetry import compute_agent_webhook_received_total
+    compute_agent_webhook_received_total.labels(group_status=group_status).inc()
 
     current_span = trace.get_current_span()
     current_span.set_attribute("alertmanager.group_status", group_status)

@@ -1,0 +1,45 @@
+scenario_id:   cluster_degraded_health
+display_name:  "Ceph Cluster Degraded Health"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["CephClusterDegraded"] in storage_analyst.py
+
+alert_name_patterns:
+  - "CephClusterDegraded"
+  - "CephHealthDegraded*"
+  - "CephWarn*"
+  - "StorageClusterDegraded"
+
+alert_match_weight: 0.35
+confidence_threshold: 0.30
+
+action:       cluster_assessment
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Ceph cluster health is degraded. The composite health score indicates one or
+  more issues (OSD failure, network partition, slow ops, or scrub activity).
+  Run a full status assessment before taking action — the root cause may be
+  a single OSD, a network issue, or just background maintenance activity.
+  Do not blindly rebalance or remove OSDs without confirming the root cause.
+
+playbook_hint: >
+  ceph status
+  ceph health detail
+  ceph osd tree
+  ceph pg stat
+  ceph osd perf
+  Identify degraded PG count and which OSDs own them before taking action.
+
+conditions:
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 1.0
+    weight:    0.40   # primary: cluster health below OK
+
+  - field:     degraded_pgs
+    operator:  gte
+    threshold: 1
+    weight:    0.25   # at least one PG degraded

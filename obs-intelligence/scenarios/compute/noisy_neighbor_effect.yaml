@@ -1,0 +1,50 @@
+scenario_id:   noisy_neighbor_effect
+display_name:  "Noisy Neighbour Effect"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "NoisyNeighbor*"
+  - "ResourceContention*"
+  - "CPUThrottling*"
+  - "SharedResourceStarvation*"
+
+alert_match_weight: 0.25
+confidence_threshold: 0.30
+
+action:       throttle_noisy_neighbour
+autonomy:     autonomous
+irreversible: false
+
+rca: >
+  A co-located workload is consuming disproportionate CPU or memory, starving
+  neighbouring services. High connection count combined with CPU pressure and
+  latency spikes is consistent with shared node resource contention.
+  Short-term: apply resource limits to the offending deployment.
+  Long-term: move noisy workloads to dedicated node pools.
+
+playbook_hint: >
+  kubectl set resources deployment/<noisy-svc> --limits=cpu=500m,memory=512Mi
+  OR: kubectl cordon the saturated node and drain+reschedule,
+  then label it with workload=noisy and set a NodeSelector.
+
+conditions:
+  - field:     cpu_usage
+    operator:  gte
+    threshold: 0.70
+    weight:    0.30
+
+  - field:     latency_p99
+    operator:  gte
+    threshold: 1.50
+    weight:    0.30
+
+  - field:     active_connections
+    operator:  gte
+    threshold: 50
+    weight:    0.20   # high conn count suggests connection-pool backpressure
+
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.02
+    weight:    0.20

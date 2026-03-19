@@ -8,6 +8,14 @@ so the tests are fully offline — no running services required.
 """
 
 import os
+import pathlib
+import sys
+
+# Make obs_intelligence importable during offline test runs (no pip install needed).
+_OBS_INTELLIGENCE_APP = pathlib.Path(__file__).parents[2] / "obs-intelligence" / "app"
+if str(_OBS_INTELLIGENCE_APP) not in sys.path:
+    sys.path.insert(0, str(_OBS_INTELLIGENCE_APP))
+
 import pytest
 
 # ── Set env vars BEFORE any app module is imported ─────────────────────────

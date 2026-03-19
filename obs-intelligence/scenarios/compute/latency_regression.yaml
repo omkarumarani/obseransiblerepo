@@ -1,0 +1,58 @@
+scenario_id:   latency_regression
+display_name:  "Latency Regression"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "HighLatency"
+  - "LatencyRegression"
+  - "P99Latency*"
+  - "SLOBreach*"
+  - "SlowRequests*"
+
+alert_match_weight: 0.30
+confidence_threshold: 0.30
+
+action:       investigate_latency
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Service p99 latency has regressed significantly above the SLO threshold.
+  Error rate is low, indicating the service remains functional but is
+  responding slowly. Most probable causes: inefficient database query,
+  synchronous blocking I/O on a hot path, slow downstream dependency call,
+  or connection pool saturation under load.
+
+playbook_hint: >
+  1. Check Tempo for the slowest spans in the last 15 minutes (TraceQL)
+  2. Identify SQL slow-queries via database slow-query log
+  3. Check connection pool saturation: pool_wait_time metric
+  4. Review external dependency timeouts in Loki logs
+  5. Enable distributed tracing sampling at 100% to capture slow traces
+
+conditions:
+  - field:     latency_p99
+    operator:  gte
+    threshold: 2.0
+    weight:    0.40   # primary: p99 >= 2 seconds is a clear regression
+
+  - field:     latency_p95
+    operator:  gte
+    threshold: 1.0
+    weight:    0.30   # p95 > 1s confirms tail latency, not just outliers
+
+  - field:     error_rate
+    operator:  lt
+    threshold: 0.03
+    weight:    0.10   # distinguishing feature: latency without errors
+
+  - field:     cpu_usage
+    operator:  lt
+    threshold: 0.70
+    weight:    0.10   # not CPU-bound — rule out cpu_saturation scenario
+
+  - field:     recent_warning_count
+    operator:  gte
+    threshold: 1
+    weight:    0.10   # warning logs for slow operations

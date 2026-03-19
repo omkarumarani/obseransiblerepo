@@ -1,0 +1,44 @@
+scenario_id:   noisy_pvc_iops
+display_name:  "Noisy PVC IOPS"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["NoisyPVCDetected"] in storage_analyst.py
+# autonomy=autonomous — safe, reversible, low blast radius
+
+alert_name_patterns:
+  - "NoisyPVCDetected"
+  - "PVCIOPSHigh*"
+  - "PVCThrottle*"
+
+alert_match_weight: 0.40
+confidence_threshold: 0.30
+
+action:       pvc_throttle
+autonomy:     autonomous          # safe to execute without human approval
+irreversible: false
+
+rca: >
+  A PVC is consuming extreme IOPS and starving its neighbour PVCs on the same
+  Ceph pool or storage node. The noisy-neighbour pattern is confirmed by high
+  pvc_iops combined with elevated I/O latency across other PVCs. IO throttling
+  via StorageClass QoS is the primary autonomous remediation — it is
+  immediately reversible by removing the throttle annotation.
+
+playbook_hint: >
+  kubectl patch storageclass <sc> --type=merge \
+    --patch '{"parameters":{"iops":"500"}}'
+  OR apply a VolumeAttributesClass with IOPS limit
+  OR: kubectl annotate pvc <pvc_name> volume.kubernetes.io/iops-limit=500
+  VERIFY: watch storage_pvc_iops{} in Grafana — should drop within 30s
+
+conditions:
+  - field:     pvc_iops
+    operator:  gte
+    threshold: 1000
+    weight:    0.40   # primary: single PVC above 1k IOPS is noisy
+
+  - field:     io_latency
+    operator:  gte
+    threshold: 0.020
+    weight:    0.25   # neighbours experiencing elevated latency confirms noise

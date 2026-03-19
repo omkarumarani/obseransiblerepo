@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ObsIntelligence Scenario",
+  "description": "AIOps scenario YAML definition for the obs-intelligence scenario correlator.",
+  "type": "object",
+  "required": ["scenario_id", "display_name", "domain", "conditions"],
+  "additionalProperties": false,
+  "properties": {
+    "scenario_id": {
+      "type": "string",
+      "description": "Unique snake_case identifier for this scenario (e.g. cpu_saturation)."
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-readable name shown in tickets and dashboards."
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["compute", "storage"],
+      "description": "Which agent domain owns this scenario."
+    },
+    "version": {
+      "type": "string",
+      "description": "Optional semantic version string (e.g. \"1.0\")."
+    },
+    "alert_name_patterns": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "fnmatch patterns for the Alertmanager alert name. If non-empty, the alert name must match at least one pattern or the scenario is skipped entirely."
+    },
+    "alert_match_weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Base confidence weight added when alert_name_patterns matches. Allows alert-driven scenarios to fire even before metric data is populated."
+    },
+    "confidence_threshold": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "Minimum confidence score (0, 1] required to include this scenario in match results. Default: 0.3."
+    },
+    "action": {
+      "type": "string",
+      "description": "Recommended remediation action identifier (e.g. osd_reweight, cpu_scale_out, escalate)."
+    },
+    "autonomy": {
+      "type": "string",
+      "enum": ["autonomous", "approval_gated", "human_only"],
+      "description": "Who may authorise execution: autonomous (no approval), approval_gated (human sign-off required), human_only (never automate)."
+    },
+    "irreversible": {
+      "type": "boolean",
+      "description": "Set true if the recommended action cannot be easily undone. Prevents automated execution."
+    },
+    "rca": {
+      "type": "string",
+      "description": "Plain-English root-cause analysis text inserted into the incident ticket body."
+    },
+    "playbook_hint": {
+      "type": "string",
+      "description": "Shell/CLI commands used to build the Ansible stub playbook for this scenario."
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "List of ObsFeatures field checks. Each matched condition adds its weight to the confidence score.",
+      "items": {
+        "type": "object",
+        "required": ["field", "operator"],
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "ObsFeatures dataclass field name to evaluate (e.g. cpu_utilization, degraded_pgs)."
+          },
+          "operator": {
+            "type": "string",
+            "enum": ["gt", "lt", "gte", "lte", "eq", "ne", "true", "false"],
+            "description": "Comparison operator: gt/lt/gte/lte/eq/ne for numeric fields; true/false for booleans."
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Numeric value to compare the field against. Ignored for 'true'/'false' operators. Default: 0.0."
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "description": "Contribution to the confidence score when this condition is satisfied. Must be > 0."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+scenario_id:   pool_full_critical
+display_name:  "Storage Pool Critically Full"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["CephPoolFull"] in storage_analyst.py
+
+alert_name_patterns:
+  - "CephPoolFull"
+  - "PoolFull*"
+  - "PoolCapacityCritical*"
+
+alert_match_weight: 0.40
+confidence_threshold: 0.30
+
+action:       pool_critical_action
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  A storage pool has reached critical capacity (> 95% used). New writes are
+  being rejected by Ceph. This is an immediate availability incident: any
+  application writing to this pool will see I/O errors. Expand the pool quota
+  or purge stale data immediately. Do not delay — rejected writes can corrupt
+  in-flight transactions.
+
+playbook_hint: >
+  URGENT:
+  ceph osd pool set <pool> target_max_bytes <new_limit>
+  OR delete stale data in the pool immediately
+  OR add OSDs to expand cluster raw capacity
+  VERIFY: ceph df; watch for pool usage to drop below 90%
+
+conditions:
+  - field:     pool_usage_pct
+    operator:  gte
+    threshold: 0.95
+    weight:    0.55   # primary: pool at or above critical threshold
+
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 1.0
+    weight:    0.10   # cluster health degrades when pool is full

@@ -1,7 +1,7 @@
 """
-aiops-bridge/app/telemetry.py
-─────────────────────────────
-OpenTelemetry bootstrap for the AIOps Bridge service.
+compute-agent/app/telemetry.py
+──────────────────────────────
+OpenTelemetry bootstrap for the Compute Agent service.
 
 Follows the same pattern as the other services in this learning stack
 so that bridge spans appear seamlessly alongside frontend-api and
@@ -43,12 +43,58 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 
-logger = logging.getLogger("aiops-bridge.telemetry")
+logger = logging.getLogger("compute-agent.telemetry")
 
-# ── Module-level instrument handles ───────────────────────────────────────────
+# ── Module-level OTel instrument handles ─────────────────────────────────────
 incident_counter: Optional[metrics.Counter] = None
 alert_processing_histogram: Optional[metrics.Histogram] = None
 webhook_counter: Optional[metrics.Counter] = None
+
+# ── Prometheus-client compute agent action counters ───────────────────────────
+# Served via GET /metrics for direct Prometheus scraping.
+# Low-cardinality labels only — do NOT add pod/replica/trace_id labels.
+from prometheus_client import Counter as PromCounter, Histogram as PromHistogram
+
+compute_agent_actions_total = PromCounter(
+    "compute_agent_actions_total",
+    "Total actions taken by the compute agent",
+    ["action_type"],
+)
+compute_agent_restarts_total = PromCounter(
+    "compute_agent_restarts_total",
+    "Total service restart actions initiated",
+)
+compute_agent_noisy_neighbour_reductions_total = PromCounter(
+    "compute_agent_noisy_neighbour_reductions_total",
+    "Total noisy-neighbour throttle actions taken",
+)
+compute_agent_escalations_total = PromCounter(
+    "compute_agent_escalations_total",
+    "Total escalations to human SRE (too risky for automation)",
+)
+compute_agent_autonomous_actions_total = PromCounter(
+    "compute_agent_autonomous_actions_total",
+    "Total actions taken without human approval",
+)
+compute_agent_approval_required_total = PromCounter(
+    "compute_agent_approval_required_total",
+    "Total remediations routed to approval gate",
+)
+compute_agent_ai_analysis_total = PromCounter(
+    "compute_agent_ai_analysis_total",
+    "Total AI analyses attempted by the compute agent",
+    ["status"],  # success | failed | skipped
+)
+compute_agent_webhook_received_total = PromCounter(
+    "compute_agent_webhook_received_total",
+    "Total Alertmanager webhooks received by compute agent",
+    ["group_status"],
+)
+compute_agent_alert_processing_seconds = PromHistogram(
+    "compute_agent_alert_processing_seconds",
+    "Time to process a single compute alert end-to-end",
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
+)
 
 
 class OtelContextFilter(logging.Filter):
@@ -68,12 +114,12 @@ class OtelContextFilter(logging.Filter):
 
 def get_tracer() -> trace.Tracer:
     """Return a named Tracer for manual span creation in main.py."""
-    return trace.get_tracer("aiops-bridge")
+    return trace.get_tracer("compute-agent")
 
 
-def setup_telemetry(fastapi_app=None, service_name: str = "aiops-bridge") -> None:
+def setup_telemetry(fastapi_app=None, service_name: str = "compute-agent") -> None:
     """
-    Bootstrap all OTel providers for the AIOps Bridge.
+    Bootstrap all OTel providers for the Compute Agent.
 
     Call once at module import time BEFORE creating routes.
 
@@ -112,7 +158,7 @@ def setup_telemetry(fastapi_app=None, service_name: str = "aiops-bridge") -> Non
     )
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
-    meter = metrics.get_meter("aiops-bridge")
+    meter = metrics.get_meter("compute-agent")
 
     # ── Logging enrichment ────────────────────────────────────────────────────
     # CRITICAL ORDER:

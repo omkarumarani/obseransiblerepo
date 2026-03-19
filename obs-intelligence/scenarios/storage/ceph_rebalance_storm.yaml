@@ -1,0 +1,41 @@
+scenario_id:   ceph_rebalance_storm
+display_name:  "Ceph Rebalance Storm"
+domain:        storage
+version:       "1.0"
+
+alert_name_patterns:
+  - "CephRebalance*"
+  - "PGRebalancing*"
+  - "CephRecovery*"
+  - "PlacementGroupMoving*"
+
+alert_match_weight: 0.35
+confidence_threshold: 0.30
+
+action:       throttle_recovery
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Ceph is performing mass placement-group rebalancing, typically triggered by
+  OSD addition/removal, pool resizing, or a CRUSH map change. The high number
+  of degraded/misplaced PGs and elevated I/O latency indicate the recovery
+  backfill is saturating the storage network. Throttle the recovery I/O rate
+  to reduce impact on application workloads while recovery completes.
+
+playbook_hint: >
+  ceph tell osd.* injectargs '--osd-max-backfills=1 --osd-recovery-max-active=1'
+  ceph tell osd.* injectargs '--osd-recovery-op-priority=1'
+  MONITOR: ceph -s | grep recovery
+  RESTORE: ceph tell osd.* injectargs '--osd-max-backfills=10 --osd-recovery-max-active=3'
+
+conditions:
+  - field:     degraded_pgs
+    operator:  gte
+    threshold: 50
+    weight:    0.40   # many PGs being moved = rebalance in progress
+
+  - field:     io_latency
+    operator:  gte
+    threshold: 0.020
+    weight:    0.25   # recovery saturates IO bandwidth → elevated latency

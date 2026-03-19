@@ -172,3 +172,130 @@ groups:
             Check collector memory limits and batch processor settings.
           dashboard_url: "http://grafana:3000"
           runbook_url: "http://xyops:5522"
+
+  # ────────────────────────────────────────────────────────────
+  # Storage Alerts  (Ceph OSD / Pool / PVC)
+  # Sourced from storage-simulator exposing storage_* metrics.
+  # All storage alerts carry  domain: storage  so Alertmanager
+  # routes them to storage-agent instead of aiops-bridge.
+  # ────────────────────────────────────────────────────────────
+  - name: storage_alerts
+    interval: 15s
+    rules:
+
+      # One OSD offline → cluster WARN, degraded PGs
+      - alert: CephOSDDown
+        expr: storage_osd_up == 0
+        for: 30s
+        labels:
+          severity: warning
+          team: storage
+          domain: storage
+        annotations:
+          summary: "Ceph OSD {{ $labels.osd_id }} is down"
+          description: >-
+            OSD {{ $labels.osd_id }} has been down for > 30s.
+            Cluster has degraded placement groups.
+            Run: ceph osd reweight {{ $labels.osd_id }} 0.0  to safely remove it.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Two or more OSDs offline → cluster ERROR, data at risk
+      - alert: CephMultipleOSDDown
+        expr: count(storage_osd_up == 0) >= 2
+        for: 30s
+        labels:
+          severity: critical
+          team: storage
+          domain: storage
+        annotations:
+          summary: "Multiple Ceph OSDs are down ({{ $value }} OSDs)"
+          description: >-
+            {{ $value }} OSDs are down. Data availability is at risk.
+            Immediate human intervention required — do NOT auto-remediate.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Pool approaching capacity — early warning
+      - alert: CephPoolNearFull
+        expr: |
+          (storage_pool_used_bytes / storage_pool_capacity_bytes) > 0.85
+        for: 1m
+        labels:
+          severity: warning
+          team: storage
+          domain: storage
+        annotations:
+          summary: "Storage pool {{ $labels.pool }} is near full (> 85%)"
+          description: >-
+            Pool {{ $labels.pool }} is at {{ $value | humanizePercentage }} capacity.
+            Plan data archival or pool expansion before writes fail.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Pool critically full — writes will be throttled / rejected
+      - alert: CephPoolFull
+        expr: |
+          (storage_pool_used_bytes / storage_pool_capacity_bytes) > 0.95
+        for: 30s
+        labels:
+          severity: critical
+          team: storage
+          domain: storage
+        annotations:
+          summary: "Storage pool {{ $labels.pool }} is critically full (> 95%)"
+          description: >-
+            Pool {{ $labels.pool }} is at {{ $value | humanizePercentage }} capacity.
+            New writes will fail. Immediate action: archive data or expand pool.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # PVC IO latency above threshold — IO pressure affecting workloads
+      - alert: PVCHighLatency
+        expr: storage_io_latency_seconds > 0.050
+        for: 1m
+        labels:
+          severity: warning
+          team: storage
+          domain: storage
+        annotations:
+          summary: "High IO latency on PVC {{ $labels.pvc }}"
+          description: >-
+            PVC {{ $labels.pvc }} latency is {{ $value | humanizeDuration }}
+            (threshold: 50ms). Check for disk saturation or noisy neighbour PVCs.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # One PVC consuming extreme IOPS — noisy neighbour
+      - alert: NoisyPVCDetected
+        expr: storage_pvc_iops > 2000
+        for: 1m
+        labels:
+          severity: warning
+          team: storage
+          domain: storage
+        annotations:
+          summary: "Noisy PVC detected: {{ $labels.pvc }} ({{ $labels.operation }})"
+          description: >-
+            PVC {{ $labels.pvc }} is consuming {{ $value | humanize }} IOPS
+            ({{ $labels.operation }}) which may be starving neighbour PVCs.
+            Consider applying IO throttle via StorageClass QoS.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Cluster health degraded (health score < 2 = not OK)
+      - alert: CephClusterDegraded
+        expr: storage_cluster_health_score < 2
+        for: 30s
+        labels:
+          severity: warning
+          team: storage
+          domain: storage
+        annotations:
+          summary: "Ceph cluster health is degraded (score={{ $value }})"
+          description: >-
+            Cluster health score {{ $value }} (0=ERROR, 1=WARN, 2=OK).
+            Degraded PGs: {{ with query "storage_degraded_placement_groups" }}{{ . | first | value | printf "%.0f" }}{{ else }}unknown{{ end }}.
+            Investigate OSD status and placement group recovery.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"

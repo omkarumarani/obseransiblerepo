@@ -230,9 +230,81 @@ scrape_configs:
         labels:
           source: "alertmanager-self"
 
-  # ── Job 5: AIOps Bridge ─────────────────────────────────────────────────────
+  # ── Job 5: Compute Agent ──────────────────────────────────────────────────────
   #
-  # The aiops-bridge emits its own metrics (incident counters, processing latency)
-  # via the OTel collector. The bridge traces also flow to Tempo.
-  # Metrics are collected through the same collector pipeline as the other apps.
-  # (No direct scrape needed — the bridge pushes to otel-collector like the APIs.)
+  # Scrapes the compute agent's /metrics endpoint for agent action counters:
+  #   compute_agent_actions_total        — actions taken (by type)
+  #   compute_agent_escalations_total    — escalations to human
+  #   compute_agent_ai_analysis_total    — AI analysis outcomes
+  #   compute_agent_approval_required_total
+  - job_name: "compute-agent"
+
+    scrape_interval: 15s
+
+    static_configs:
+      - targets:
+          - "compute-agent:9000"
+        labels:
+          source: "compute-agent"
+
+  # ── Job 6: Storage Simulator ─────────────────────────────────────────────────
+  #
+  # Scrapes simulated Ceph / PVC storage metrics:
+  #   storage_osd_up                      — OSD health per OSD ID
+  #   storage_pool_used_bytes             — pool fill level
+  #   storage_pool_capacity_bytes         — pool total capacity
+  #   storage_io_latency_seconds          — PVC IO latency
+  #   storage_pvc_iops                    — PVC IOPS by operation
+  #   storage_cluster_health_score        — cluster health (0/1/2)
+  #   storage_degraded_placement_groups   — number of degraded PGs
+  #   storage_simulator_active_scenario   — currently active scenario label
+  - job_name: "storage-simulator"
+
+    scrape_interval: 15s
+
+    static_configs:
+      - targets:
+          - "storage-simulator:9200"
+        labels:
+          source: "storage-simulator"
+
+  # ── Job 7: Storage Agent ──────────────────────────────────────────────────────
+  #
+  # Scrapes storage agent action counters (Prometheus-client endpoint):
+  #   storage_agent_actions_total              — actions by type
+  #   storage_agent_osd_reweights_total        — OSD reweight actions
+  #   storage_agent_noisy_pvc_throttles_total  — PVC throttle actions
+  #   storage_agent_escalations_total          — escalations to human
+  #   storage_agent_autonomous_remediations_total
+  #   storage_agent_approval_required_total
+  #   storage_agent_ai_analysis_total          — AI analysis outcomes
+  - job_name: "storage-agent"
+
+    scrape_interval: 15s
+
+    static_configs:
+      - targets:
+          - "storage-agent:9001"
+        labels:
+          source: "storage-agent"
+
+  # ── Job 8: Obs-Intelligence Engine ───────────────────────────────────────────
+  #
+  # Scrapes the obs-intelligence engine's Prometheus-client /metrics endpoint:
+  #   obs_intelligence_anomaly_z_score                   — Z-score per metric
+  #   obs_intelligence_anomaly_detected_total            — anomaly event count
+  #   obs_intelligence_forecast_breach_minutes           — minutes to predicted breach
+  #   obs_intelligence_scenario_match_confidence         — scenario match score
+  #   obs_intelligence_risk_score                        — current risk score
+  #   obs_intelligence_analysis_loop_duration_seconds    — loop latency histogram
+  #   obs_intelligence_analysis_loop_runs_total          — loop iteration count
+  #   obs_intelligence_forecast_loop_runs_total          — forecast loop count
+  - job_name: "obs-intelligence"
+
+    scrape_interval: 15s
+
+    static_configs:
+      - targets:
+          - "obs-intelligence:9100"
+        labels:
+          source: "obs-intelligence"

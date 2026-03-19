@@ -1,0 +1,51 @@
+scenario_id:   error_spike
+display_name:  "Error Rate Spike"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "HighErrorRate"
+  - "ErrorSpike"
+  - "*ErrorRate*"
+  - "High5xxRate"
+  - "ServiceErrors*"
+
+alert_match_weight: 0.30
+confidence_threshold: 0.30
+
+action:       investigate_errors
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Service error rate has spiked above 5%. Clients are receiving HTTP 5xx
+  responses. Immediate investigation is required to determine whether the
+  root cause is a code regression, downstream dependency failure, database
+  connectivity issue, or resource exhaustion causing request timeouts.
+
+playbook_hint: >
+  1. kubectl logs -l app=<svc> --tail=200 | grep -i error
+  2. Check downstream service health endpoints
+  3. Review Loki: {service_name="<svc>"} |= "ERROR"
+  4. Check recent deployments: kubectl rollout history deployment/<svc>
+  5. If regression confirmed: kubectl rollout undo deployment/<svc>
+
+conditions:
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.05
+    weight:    0.45   # primary signal — 5%+ error rate
+
+  - field:     log_anomaly_detected
+    operator:  "true"
+    weight:    0.25   # log spike confirms real errors (not metric noise)
+
+  - field:     recent_error_count
+    operator:  gte
+    threshold: 5
+    weight:    0.15   # concrete error log count adds confidence
+
+  - field:     latency_p99
+    operator:  gte
+    threshold: 0.50
+    weight:    0.15   # errors often accompanied by elevated tail latency

@@ -1,0 +1,43 @@
+scenario_id:   multi_osd_failure
+display_name:  "Multiple OSD Failure"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["CephMultipleOSDDown"] in storage_analyst.py
+# CRITICAL: autonomy=human_only and irreversible=true — never auto-remediate.
+
+alert_name_patterns:
+  - "CephMultipleOSDDown"
+
+alert_match_weight: 0.50
+confidence_threshold: 0.30
+
+action:       escalate_critical
+autonomy:     human_only      # NEVER automate multiple-OSD failure
+irreversible: true             # OSD data recovery can be irreversible if rushed
+
+rca: >
+  Multiple Ceph OSDs are simultaneously offline. This is a critical storage
+  availability event: the cluster may be unable to satisfy the replication
+  factor, risking data unavailability or loss. Auto-remediation is BLOCKED.
+  Immediate SRE escalation is required. Do not remove or rebalance OSDs until
+  the root cause is confirmed (network partition vs. disk failure vs. host down).
+
+playbook_hint: >
+  ESCALATE — do NOT auto-remediate multiple OSD failure.
+  1. ceph status  — confirm scope
+  2. ceph health detail  — identify which OSDs are down and why
+  3. ceph osd tree  — check which hosts are affected
+  4. Check host connectivity: ping/ssh to affected storage nodes
+  5. Contact storage SRE lead immediately; do NOT reweight until root cause is known
+
+conditions:
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 0.0
+    weight:    0.30   # cluster in ERROR state (0 = ERROR)
+
+  - field:     degraded_pgs
+    operator:  gte
+    threshold: 32
+    weight:    0.20   # multiple OSDs down → many degraded PGs

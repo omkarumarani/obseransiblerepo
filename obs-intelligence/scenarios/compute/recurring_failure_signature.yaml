@@ -1,0 +1,47 @@
+scenario_id:   recurring_failure_signature
+display_name:  "Recurring Failure Signature"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "RecurringAlert*"
+  - "FlappingService*"
+  - "PeriodicFailure*"
+  - "AlertFlapping*"
+
+alert_match_weight: 0.30
+confidence_threshold: 0.30
+
+action:       deep_dive_investigation
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  The service is exhibiting a recurring failure pattern with a periodic error
+  spike combined with a log anomaly. The cyclic nature strongly suggests a
+  scheduler, cron job, or a memory/resource leak that manifests on a fixed
+  cycle. This requires a deep-dive investigation beyond standard RCA: correlate
+  alert timestamps with cron schedules and compare resource metrics before,
+  during, and after the failure windows.
+
+playbook_hint: >
+  1. Correlate alert timestamps: grep alert history for recurrence interval
+  2. List cron jobs: kubectl get cronjobs; check pod logs at failure times
+  3. Plot memory growth trend over 24 h in Grafana (look for sawtooth → GC leak pattern)
+  4. Capture heap dump at the peak of the next cycle before the restart fires
+  5. Add a synthetic load test reproducing the cron pattern to replicate in staging
+
+conditions:
+  - field:     log_anomaly_detected
+    operator:  "true"
+    weight:    0.40   # log anomaly is the strongest recurring-failure indicator
+
+  - field:     recent_error_count
+    operator:  gte
+    threshold: 5
+    weight:    0.30   # concrete error count distinguishes from warning noise
+
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.02
+    weight:    0.30

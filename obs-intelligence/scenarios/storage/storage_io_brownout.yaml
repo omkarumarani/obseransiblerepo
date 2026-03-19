@@ -1,0 +1,42 @@
+scenario_id:   storage_io_brownout
+display_name:  "Storage I/O Brownout"
+domain:        storage
+version:       "1.0"
+
+alert_name_patterns:
+  - "StorageIOBrownout*"
+  - "StoragePerformanceDegraded*"
+  - "PVCIODegraded*"
+  - "CephSlowOps*"
+
+alert_match_weight: 0.35
+confidence_threshold: 0.30
+
+action:       io_investigation
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Storage I/O performance is broadly degraded across PVCs without a single
+  dominant noisy consumer. The moderate latency increase combined with
+  cluster stress typically indicates: disk firmware issues on one or more
+  OSDs, storage network congestion, or Ceph slow-ops piling up. This is
+  a systemic brownout requiring node-level investigation.
+
+playbook_hint: >
+  ceph osd perf  — identify slowest OSDs
+  ceph tell osd.<id> dump_ops_in_flight  — find stuck operations
+  iostat -x 1 5 on each storage node  — identify disk-level bottlenecks
+  Check storage network: ping between OSD hosts; check for packet loss
+  Check OSD journals: ceph osd log osd.<id> | tail -50
+
+conditions:
+  - field:     io_latency
+    operator:  gte
+    threshold: 0.030
+    weight:    0.40   # elevated IO latency across the board (not a single PVC)
+
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 1.0
+    weight:    0.25   # cluster under stress

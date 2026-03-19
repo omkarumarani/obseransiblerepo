@@ -1,0 +1,26 @@
+# storage-agent/requirements.txt
+# ─────────────────────────────────────────────────────────────
+# Storage Agent dependencies — mirrors aiops-bridge pattern.
+# ─────────────────────────────────────────────────────────────
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+
+# OpenTelemetry — same versions as the rest of the stack
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+opentelemetry-exporter-otlp-proto-common==1.29.0
+
+# Prometheus-client — exposes /metrics scrape endpoint
+prometheus-client==0.21.1
+
+# AI enrichment (optional — same multi-provider support as aiops-bridge)
+anthropic==0.40.0
+
+# Shared obs_intelligence package — installed from Docker build context
+# (Dockerfile COPYs obs-intelligence/app/obs_intelligence → /app/obs_intelligence)
+-e /app/obs_intelligence

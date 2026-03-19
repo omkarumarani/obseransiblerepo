@@ -1,0 +1,43 @@
+scenario_id:   pvc_latency_degradation
+display_name:  "PVC I/O Latency Degradation"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["PVCHighLatency"] in storage_analyst.py
+
+alert_name_patterns:
+  - "PVCHighLatency"
+  - "PVCLatency*"
+  - "StorageLatency*"
+
+alert_match_weight: 0.35
+confidence_threshold: 0.30
+
+action:       investigate_io
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  PVC I/O latency is significantly elevated above the normal baseline.
+  Possible root causes: noisy-neighbour PVC consuming disproportionate IOPS,
+  underlying OSD disk degradation or failure, storage network congestion, or
+  Ceph scrub/rebalance activity causing I/O interference. Investigate the
+  highest-IOPS consumers before applying throttling.
+
+playbook_hint: >
+  kubectl describe pvc <pvc_name>
+  kubectl get storageclass <class> -o yaml | grep -i iops
+  ceph osd perf  — identify slow OSDs
+  Check Grafana: pvc_iops{} for top consumers
+  If noisy neighbour confirmed: apply VolumeAttributesClass IOPS limit
+
+conditions:
+  - field:     io_latency
+    operator:  gte
+    threshold: 0.050
+    weight:    0.55   # primary: 50ms+ PVC latency is clearly abnormal
+
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 1.0
+    weight:    0.10   # OSD issues degrade cluster health

@@ -1,0 +1,44 @@
+scenario_id:   memory_leak_emergence
+display_name:  "Memory Leak Emergence"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "HighMemory*"
+  - "MemoryLeak*"
+  - "OOMKill*"
+  - "MemoryUsage*"
+
+alert_match_weight: 0.30
+confidence_threshold: 0.30
+
+action:       restart_service
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Service memory footprint is growing abnormally and has exceeded 80%.
+  The pattern is consistent with a memory leak or unbounded in-process cache.
+  A rolling restart provides temporary relief but the underlying cause must
+  be investigated via heap dump or allocation profiling.
+
+playbook_hint: >
+  kubectl rollout restart deployment/<svc>
+  OR take heap dump first: kubectl exec <pod> -- jmap -dump:live,format=b,file=/tmp/heap.hprof <pid>
+  Follow up: check for unbounded caches, circular references, or missing TTL on cached objects.
+
+conditions:
+  - field:     memory_usage
+    operator:  gte
+    threshold: 0.80
+    weight:    0.45   # dominant signal for memory leak
+
+  - field:     latency_p99
+    operator:  gte
+    threshold: 0.50
+    weight:    0.20   # GC pressure causes latency spikes
+
+  - field:     recent_error_count
+    operator:  gte
+    threshold: 1
+    weight:    0.05   # OOM kills produce error logs

@@ -1,21 +1,24 @@
-# aiops-bridge/requirements.txt
+# obs-intelligence/requirements.txt
 # ─────────────────────────────────────────────────────────────
-# AIOps Bridge dependencies
-# Same OTel pattern as the learning project's other services.
+# Obs-Intelligence Engine dependencies.
+# Versions pinned to match the rest of the obs-learning stack.
 # ─────────────────────────────────────────────────────────────
 
 # Web framework
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 
-# HTTP client (async, with OTel auto-instrumentation support)
+# HTTP client — async queries to Prometheus and Loki
 httpx==0.28.1
+
+# Prometheus scrape endpoint (GET /metrics)
+prometheus-client==0.21.1
 
 # OpenTelemetry API + SDK
 opentelemetry-api==1.29.0
 opentelemetry-sdk==1.29.0
 
-# OTLP exporter over gRPC (same as other services in this stack)
+# OTLP exporter over gRPC
 opentelemetry-exporter-otlp-proto-grpc==1.29.0
 
 # Auto-instrumentation: FastAPI + httpx
@@ -25,5 +28,12 @@ opentelemetry-instrumentation-httpx==0.50b0
 # Logging bridge: stdlib → OTLP
 opentelemetry-exporter-otlp-proto-common==1.29.0
 
-# AI — Anthropic Claude (for RCA, playbook generation, PR descriptions)
-anthropic==0.40.0
+# Background scheduler — periodic scenario reload, anomaly sweeps, forecasts
+apscheduler==3.10.4
+
+# Numerics — anomaly detection (z-score, rolling stats) and forecasting
+numpy==2.1.3
+scipy==1.14.1
+
+# Scenario definition files (YAML)
+pyyaml==6.0.2

@@ -50,11 +50,24 @@ from .ai_analyst import (
     build_enriched_ticket_body,
     fetch_loki_logs,
     fetch_prometheus_context,
-    generate_ai_analysis,
     get_notify_list,
 )
 from .approval_workflow import request_approval
 from .xyops_client import TOTAL_STEPS, post_step_comment
+from obs_intelligence.feature_extractor import extract_features as _extract_features
+from obs_intelligence.scenario_correlator import (
+    load_catalog as _load_catalog,
+    match_scenarios as _match_scenarios,
+    match_best as _match_best,
+)
+from obs_intelligence.risk_scorer import score_risk as _score_risk
+from obs_intelligence.recommender import recommend as _recommend
+from obs_intelligence.evidence_builder import (
+    build_evidence as _build_evidence,
+    evidence_lines as _evidence_lines,
+)
+from obs_intelligence.llm_enricher import enrich as _llm_enrich
+from . import autonomy_rules as _autonomy_rules
 
 logger = logging.getLogger("aiops-bridge.pipeline")
 
@@ -92,6 +105,11 @@ class PipelineSession:
     logs: str = ""
     metrics: dict = field(default_factory=dict)
     analysis: dict = field(default_factory=dict)
+
+    # Risk + evidence (populated by agent_analyze)
+    risk_score: float = 0.0
+    risk_level: str = "unknown"
+    evidence_lines_data: list = field(default_factory=list)
 
     # Approval gate
     approval_id: str = ""
@@ -369,82 +387,171 @@ async def agent_metrics(req: AgentRequest) -> dict:
     }
 
 
-# ── Agent 4: Claude AI Analyst ─────────────────────────────────────────────────
+# ── Agent 4: Intelligence Pipeline + LLM Analyst ──────────────────────────────
+
+# Module-level compute scenario catalog cache (loaded once at first call).
+_compute_catalog: list | None = None
+
+
+def _get_compute_catalog() -> list:
+    global _compute_catalog
+    if _compute_catalog is None:
+        _compute_catalog = _load_catalog(domain="compute")
+    return _compute_catalog
+
+
+def _analysis_from_recommendation(rec, risk) -> dict:
+    """Build a backward-compatible analysis dict from a Recommendation + RiskAssessment."""
+    from .ai_analyst import _build_compute_stub_playbook
+    return {
+        "rca_summary":         rec.description,
+        "recommended_action":  rec.action_type,
+        "autonomy_level":      "autonomous" if rec.autonomous else "approval_gated",
+        "ansible_playbook":    (
+            _build_compute_stub_playbook(rec.action_type, rec.rollback_plan or "")
+            if rec.action_type != "escalate" else ""
+        ),
+        "ansible_description": f"Deterministic remediation: {rec.display_name}",
+        "test_plan": [
+            f"Verify service health after {rec.action_type}",
+            "Monitor error_rate and latency_p99 for 5 minutes post-action",
+            "Check Grafana Agentic AI Operations dashboard for confirmation",
+        ],
+        "confidence":          f"{rec.confidence:.2f}",
+        "provider":            "scenario-catalog",
+        "risk_score":          round(risk.risk_score, 3),
+        "risk_level":          risk.risk_level,
+        "evidence_lines":      [],  # populated by pipeline after build_evidence
+    }
+
 
 @pipeline_router.post("/agent/analyze")
 async def agent_analyze(req: AgentRequest) -> dict:
     """
-    Agent 4 — Call Claude AI for root cause analysis.
+    Agent 4 — Intelligence pipeline: feature extraction → scenario correlation →
+    risk scoring → recommendation → (optional) LLM enrichment.
 
-    Requires CLAUDE_API_KEY to be set.  If not set, posts a [--] SKIPPED
-    comment and returns ai_enabled=false so subsequent agents still run.
-    Stores analysis dict in session (contains ansible_playbook, rca_summary,
-    test_plan, rollback_steps, pr_description, confidence).
+    Always runs the deterministic intelligence pipeline regardless of AI
+    availability.  If an AI key is configured, the LLM adds a rich incident
+    narrative on top of the deterministic output.
     """
     session = _require_session(req.session_id)
+    from .telemetry import compute_agent_ai_analysis_total
 
+    # ── Step 1: extract typed features from session data ─────────────────────
+    features = _extract_features(
+        alert_name=session.alert_name,
+        service_name=session.service_name,
+        severity=session.severity,
+        domain="compute",
+        metrics=session.metrics,
+        logs=session.logs,
+    )
+
+    # ── Step 2: scenario correlation ─────────────────────────────────────────
+    catalog = _get_compute_catalog()
+    matches = _match_scenarios(features, catalog)
+    best_match, best_def = _match_best(features, catalog)
+
+    # ── Step 3: risk scoring ─────────────────────────────────────────────────
+    risk = _score_risk(features, best_match, "compute")
+
+    # ── Step 4: build recommendation ─────────────────────────────────────────
+    rec = _recommend(best_match, best_def, risk, "compute", _autonomy_rules)
+
+    # ── Step 5: assemble evidence report ─────────────────────────────────────
+    evidence = _build_evidence(
+        trace_id=session.bridge_trace_id,
+        incident_id=session.ticket_id,
+        features=features,
+        matches=matches,
+        risk=risk,
+        recommendations=[rec],
+    )
+    ev_lines = _evidence_lines(evidence)
+
+    # Persist risk + evidence in session for downstream agents (ticket, approval)
+    session.risk_score = risk.risk_score
+    session.risk_level = risk.risk_level
+    session.evidence_lines_data = ev_lines
+
+    # ── Step 6: LLM enrichment (or deterministic fallback) ───────────────────
     if AI_ENABLED and _http:
         await post_step_comment(
             session.ticket_id, 3, "started",
-            "Calling **Claude AI** (`claude-3-5-haiku-20241022`) for RCA...",
+            f"Running intelligence pipeline + LLM enrichment "
+            f"(risk={risk.risk_level}, scenarios={len(matches)})...",
             _post,
         )
-        session.analysis = await generate_ai_analysis(
-            alert_name=session.alert_name,
-            service_name=session.service_name,
-            severity=session.severity,
-            description=session.description,
-            logs=session.logs,
-            metrics=session.metrics,
-            http=_http,
-        )
-        confidence = session.analysis.get("confidence", "?")
-        rca_words = len(session.analysis.get("rca_summary", "").split())
-        has_playbook = bool(session.analysis.get("ansible_playbook"))
+        enrichment = await _llm_enrich(evidence, rec, risk, _http)
+        if enrichment:
+            session.analysis = enrichment.to_analysis_dict()
+            session.analysis["risk_score"] = round(risk.risk_score, 3)
+            session.analysis["risk_level"] = risk.risk_level
+            session.analysis["evidence_lines"] = ev_lines
+            compute_agent_ai_analysis_total.labels(status="success").inc()
+            provider = enrichment.provider
+        else:
+            session.analysis = _analysis_from_recommendation(rec, risk)
+            session.analysis["evidence_lines"] = ev_lines
+            compute_agent_ai_analysis_total.labels(status="deterministic").inc()
+            provider = "scenario-catalog"
+        session.stage = "analyzed"
+    else:
+        session.analysis = _analysis_from_recommendation(rec, risk)
+        session.analysis["evidence_lines"] = ev_lines
+        compute_agent_ai_analysis_total.labels(status="deterministic").inc()
+        provider = "scenario-catalog"
         session.stage = "analyzed"
 
-        await post_step_comment(
-            session.ticket_id, 3, "done",
-            f"RCA complete — confidence: **{confidence}** | "
-            f"{rca_words}-word analysis | playbook: {'yes' if has_playbook else 'no'}",
-            _post,
-        )
-        logger.info(
-            "Agent analyze complete  session=%s  confidence=%s  playbook=%s",
-            req.session_id, confidence, has_playbook,
-        )
-        await asyncio.sleep(WORKFLOW_STEP_DELAY)
-        return {
-            "status": "ok",
-            "session_id": req.session_id,
-            "agent": "claude-ai-analyst",
-            "ticket_num": session.ticket_num,
-            "ai_enabled": True,
-            "confidence": confidence,
-            "has_playbook": has_playbook,
-            "rca_summary": session.analysis.get("rca_summary", ""),
-            "message": (
-                f"AI analysis: confidence={confidence}, "
-                f"playbook={'yes' if has_playbook else 'no'}, "
-                f"{rca_words} words of RCA"
-            ),
-        }
-    else:
-        await post_step_comment(
-            session.ticket_id, 3, "skipped",
-            "AI analysis — SKIPPED (`CLAUDE_API_KEY` not set — add key to enable)",
-            _post,
-        )
-        session.stage = "analyzed"
-        await asyncio.sleep(WORKFLOW_STEP_DELAY)
-        return {
-            "status": "ok",
-            "session_id": req.session_id,
-            "agent": "claude-ai-analyst",
-            "ticket_num": session.ticket_num,
-            "ai_enabled": False,
-            "message": "AI skipped — CLAUDE_API_KEY not configured",
-        }
+    # ── Optional: merge pre-computed signals from obs-intelligence ──────────────
+    _obs_url = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
+    try:
+        if _http:
+            resp = await _http.get(f"{_obs_url}/intelligence/current", timeout=3.0)
+            if resp.status_code == 200:
+                intel = resp.json()
+                if intel.get("anomalies"):
+                    session.analysis["obs_anomalies"] = intel["anomalies"]
+                if intel.get("forecasts"):
+                    session.analysis["obs_forecasts"] = intel["forecasts"]
+                logger.debug(
+                    "Merged obs-intelligence signals: anomalies=%d forecasts=%d",
+                    len(intel.get("anomalies", [])),
+                    len(intel.get("forecasts", [])),
+                )
+    except Exception:
+        pass  # obs-intelligence unavailable — continue without pre-computed signals
+
+    await post_step_comment(
+        session.ticket_id, 3, "done",
+        f"Analysis complete — risk: **{risk.risk_level.upper()}** "
+        f"({risk.risk_score:.2f})  |  action: `{rec.action_type}`  |  "
+        f"confidence: {rec.confidence:.0%}  |  provider: {provider}",
+        _post,
+    )
+    logger.info(
+        "Agent analyze complete  session=%s  risk=%s(%.3f)  action=%s  provider=%s",
+        req.session_id, risk.risk_level, risk.risk_score, rec.action_type, provider,
+    )
+    await asyncio.sleep(WORKFLOW_STEP_DELAY)
+    return {
+        "status": "ok",
+        "session_id": req.session_id,
+        "agent": "intelligence-pipeline",
+        "ticket_num": session.ticket_num,
+        "ai_enabled": AI_ENABLED,
+        "risk_score": round(risk.risk_score, 3),
+        "risk_level": risk.risk_level,
+        "recommended_action": rec.action_type,
+        "confidence": f"{rec.confidence:.2f}",
+        "scenario_matches": len(matches),
+        "provider": provider,
+        "message": (
+            f"Intelligence pipeline: risk={risk.risk_level} ({risk.risk_score:.2f}), "
+            f"action={rec.action_type}, confidence={rec.confidence:.0%}"
+        ),
+    }
 
 
 # ── Agent 5: Incident Scribe ───────────────────────────────────────────────────
@@ -476,6 +583,9 @@ async def agent_ticket(req: AgentRequest) -> dict:
         bridge_trace_id=session.bridge_trace_id,
         metrics=session.metrics,
         analysis=session.analysis,
+        risk_score=session.risk_score,
+        risk_level=session.risk_level,
+        evidence_lines=session.evidence_lines_data,
     )
 
     await _post(
@@ -543,6 +653,10 @@ async def agent_approval(req: AgentRequest) -> dict:
             _post,
         )
         session.approval_id = f"apr-{uuid.uuid4().hex[:12]}"
+        # Track approval gate usage
+        from .telemetry import compute_agent_approval_required_total, compute_agent_actions_total
+        compute_agent_approval_required_total.inc()
+        compute_agent_actions_total.labels(action_type="approval_requested").inc()
         approval_req = await request_approval(
             approval_id=session.approval_id,
             incident_ticket_id=session.ticket_id,

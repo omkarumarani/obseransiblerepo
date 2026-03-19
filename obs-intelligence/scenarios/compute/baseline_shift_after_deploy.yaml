@@ -1,0 +1,51 @@
+scenario_id:   baseline_shift_after_deploy
+display_name:  "Baseline Shift After Deploy"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "LatencyIncrease*"
+  - "ErrorRateIncrease*"
+  - "BaselineShift*"
+  - "PostDeployRegression*"
+  - "DeployRollback*"
+
+alert_match_weight: 0.25
+confidence_threshold: 0.30
+
+action:       rollback_deploy
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Service performance metrics have shifted from their pre-deploy baseline.
+  The simultaneous increase in latency, warning log rate, and detection of
+  a log anomaly is consistent with a code or configuration regression
+  introduced in the most recent deployment. Consider rollback while
+  investigating root cause in the git diff.
+
+playbook_hint: >
+  kubectl rollout undo deployment/<svc>
+  VERIFY: watch kubectl rollout status deployment/<svc>
+  POST-CHECK: monitor error_rate and p99 for 5 minutes after rollback
+  ROOT CAUSE: git diff HEAD~1 -- config/ src/; check for missing env vars or DB migration issues
+
+conditions:
+  - field:     latency_p99
+    operator:  gte
+    threshold: 1.50
+    weight:    0.35   # latency regression is the primary post-deploy signal
+
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.02
+    weight:    0.25
+
+  - field:     recent_warning_count
+    operator:  gte
+    threshold: 5
+    weight:    0.20   # warning logs spike with config regressions
+
+  - field:     log_anomaly_detected
+    operator:  "true"
+    weight:    0.20   # log anomaly confirms the shift isn't transient noise

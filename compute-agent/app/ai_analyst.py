@@ -27,6 +27,10 @@ import os
 from typing import Any
 
 import httpx
+from obs_intelligence.telemetry_client import (
+    fetch_instant_metric as _fetch_instant_metric,
+    fetch_loki_context as _fetch_loki_context,
+)
 
 logger = logging.getLogger("aiops-bridge.ai")
 
@@ -78,37 +82,14 @@ async def fetch_loki_logs(
 ) -> str:
     """
     Query Loki for the last `limit` log lines from the given service.
-    Returns a plain-text string of log lines, or an empty string on failure.
+    Delegates to the shared obs_intelligence telemetry client.
     """
-    try:
-        query = f'{{service_name="{service_name}"}}'
-        resp = await http.get(
-            f"{LOKI_URL}/loki/api/v1/query_range",
-            params={
-                "query": query,
-                "limit": limit,
-                "direction": "backward",
-            },
-            timeout=5.0,
-        )
-        if resp.status_code != 200:
-            logger.warning("Loki query returned HTTP %d", resp.status_code)
-            return ""
-        data = resp.json()
-        lines: list[str] = []
-        for stream in data.get("data", {}).get("result", []):
-            for _ts, msg in stream.get("values", []):
-                lines.append(msg)
-        # Most recent last → chronological order
-        lines.reverse()
-        log_text = "\n".join(lines[-limit:])
-        logger.info(
-            "Loki: fetched %d log lines for service=%s", len(lines), service_name
-        )
-        return log_text
-    except Exception as exc:
-        logger.warning("Loki fetch failed for %s: %s", service_name, exc)
-        return ""
+    return await _fetch_loki_context(
+        label_query=f'{{service_name="{service_name}"}}',
+        http=http,
+        limit=limit,
+        loki_url=LOKI_URL,
+    )
 
 
 async def fetch_prometheus_context(
@@ -138,24 +119,15 @@ async def fetch_prometheus_context(
 
     results: dict[str, str] = {}
     for name, promql in queries.items():
-        try:
-            resp = await http.get(
-                f"{PROMETHEUS_URL}/api/v1/query",
-                params={"query": promql},
-                timeout=5.0,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                result_list = data.get("data", {}).get("result", [])
-                if result_list:
-                    val = float(result_list[0]["value"][1])
-                    results[name] = f"{val:.2f}"
-                else:
-                    results[name] = "no data"
-            else:
-                results[name] = f"HTTP {resp.status_code}"
-        except Exception as exc:
-            results[name] = f"error: {exc}"
+        series = await _fetch_instant_metric(promql, http, PROMETHEUS_URL)
+        if series:
+            try:
+                val = float(series[0]["value"][1])
+                results[name] = f"{val:.2f}"
+            except (KeyError, ValueError, IndexError):
+                results[name] = "parse error"
+        else:
+            results[name] = "no data"
 
     logger.info("Prometheus context for %s: %s", service_name, results)
     return results
@@ -308,8 +280,106 @@ Respond with this exact JSON schema:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Ticket body builder (AI-enriched)
+# Deterministic analysis (scenario-catalog fallback, no LLM required)
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# Module-level catalog cache — populated on first call.
+_compute_catalog: list | None = None
+
+
+def _get_compute_catalog() -> list:
+    """Return (and lazily initialise) the compute scenario catalog."""
+    global _compute_catalog
+    if _compute_catalog is None:
+        from obs_intelligence.scenario_correlator import load_catalog
+        _compute_catalog = load_catalog(domain="compute")
+    return _compute_catalog
+
+
+def deterministic_analysis(
+    alert_name: str,
+    service_name: str,
+    severity: str = "warning",
+) -> dict[str, Any]:
+    """
+    Rule-engine fallback for when AI is disabled.
+
+    Matches *alert_name* against the compute scenario YAML catalog and returns
+    an action recommendation in the same dict schema as generate_ai_analysis(),
+    so downstream agents (ticket builder, approval workflow) work unchanged.
+    """
+    import datetime as _dt
+
+    from obs_intelligence.models import ObsFeatures
+    from obs_intelligence.scenario_correlator import match_best
+
+    features = ObsFeatures(
+        alert_name=alert_name,
+        service_name=service_name,
+        severity=severity,
+        domain="compute",
+        timestamp=_dt.datetime.now(_dt.timezone.utc),
+    )
+
+    catalog = _get_compute_catalog()
+    best_match, best_def = match_best(features, catalog)
+
+    if best_match and best_def:
+        logger.info(
+            "Scenario catalog match  alert=%s  scenario=%s  confidence=%.2f",
+            alert_name, best_def.scenario_id, best_match.confidence,
+        )
+        return {
+            "rca_summary": best_def.rca,
+            "recommended_action": best_def.action,
+            "autonomy_level": best_def.autonomy,
+            "ansible_playbook": _build_compute_stub_playbook(alert_name, best_def.playbook_hint),
+            "ansible_description": (
+                f"Deterministic remediation for {best_def.display_name}"
+            ),
+            "test_plan": [
+                f"Verify {service_name} health after {best_def.action}",
+                "Monitor error_rate and latency_p99 for 5 minutes post-action",
+                "Check Grafana Agentic AI Operations dashboard for confirmation",
+            ],
+            "confidence": f"{best_match.confidence:.2f}",
+            "provider": "scenario-catalog",
+        }
+
+    logger.info("No scenario catalog match  alert=%s — using generic escalate", alert_name)
+    return {
+        "rca_summary": (
+            f"Unrecognised compute alert '{alert_name}'. "
+            "No scenario catalog match found. Escalating to on-call SRE."
+        ),
+        "recommended_action": "escalate",
+        "autonomy_level": "human_only",
+        "ansible_playbook": "",
+        "ansible_description": "No matching scenario — manual investigation required",
+        "test_plan": ["Manual investigation required — no scenario matched"],
+        "confidence": "0.00",
+        "provider": "scenario-catalog",
+    }
+
+
+def _build_compute_stub_playbook(alert_name: str, hint: str) -> str:
+    return f"""---
+# Compute Remediation Playbook — {alert_name}
+# Generated by: compute-agent scenario catalog (deterministic)
+# Review carefully before execution.
+- name: Compute incident remediation — {alert_name}
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remediation step
+      # {hint}
+      debug:
+        msg: "Review and implement: {hint}"
+"""
+
+
+
 
 def build_enriched_ticket_body(
     service_name: str,
@@ -321,6 +391,9 @@ def build_enriched_ticket_body(
     bridge_trace_id: str,
     metrics: dict[str, str],
     analysis: dict[str, Any],
+    risk_score: float = 0.0,
+    risk_level: str = "",
+    evidence_lines: list | None = None,
 ) -> str:
     """
     Build the full xyOps ticket body (Markdown) combining raw context
@@ -350,6 +423,27 @@ def build_enriched_ticket_body(
         for k, v in metrics.items():
             label = k.replace("_", " ").title()
             body += f"| {label} | `{v}` |\n"
+        body += "\n"
+
+    # ── Risk assessment ───────────────────────────────────────
+    _eff_risk_score = risk_score or (analysis or {}).get("risk_score", 0.0)
+    _eff_risk_level = risk_level or (analysis or {}).get("risk_level", "")
+    if _eff_risk_level:
+        level_badge = {
+            "critical": "🔴 CRITICAL",
+            "high":     "🟠 HIGH",
+            "medium":   "🟡 MEDIUM",
+            "low":      "🟢 LOW",
+        }.get(_eff_risk_level.lower(), f"⚪ {_eff_risk_level.upper()}")
+        body += f"### ⚡ Risk Assessment\n\n"
+        body += f"**Risk level:** {level_badge}  |  **Score:** `{_eff_risk_score:.3f}`\n\n"
+
+    # ── Evidence observations ─────────────────────────────────
+    _eff_evidence = evidence_lines or (analysis or {}).get("evidence_lines") or []
+    if _eff_evidence:
+        body += "### 🔍 Evidence Observations\n\n"
+        for line in _eff_evidence:
+            body += f"{line}\n"
         body += "\n"
 
     # ── AI RCA ───────────────────────────────────────────────

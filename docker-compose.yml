@@ -616,11 +616,11 @@ services:
   # Receives firing alerts from Prometheus, groups/deduplicates them,
   # and routes them to receivers (webhook, Slack, PagerDuty, etc.).
   #
-  # In this AIOps integration, all alerts are routed to the aiops-bridge
+  # In this AIOps integration, all alerts are routed to the compute-agent
   # service which translates them into xyOps incident tickets.
   #
   # Data flow:
-  #   Prometheus (alert rule fires) → Alertmanager → aiops-bridge → xyOps
+  #   Prometheus (alert rule fires) → Alertmanager → compute-agent → xyOps
   #
   # Ports
   # ─────
@@ -633,7 +633,7 @@ services:
   #   ./alertmanager/alertmanager.yml defines:
   #     - Routing tree (which alerts go where)
   #     - Inhibition rules (suppress warning when critical fires)
-  #     - Receivers (xyops-incidents → aiops-bridge webhook)
+  #     - Receivers (xyops-incidents → compute-agent webhook)
   # ──────────────────────────────────────────────────────────
   alertmanager:
     image: prom/alertmanager:v0.27.0
@@ -655,44 +655,45 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────
-  # AIOps Bridge
+  # Compute Agent  (renamed from aiops-bridge)
   #
-  # The integration glue between the observability stack and xyOps.
-  # This small FastAPI service:
+  # The compute-domain AIOps agent — receives Alertmanager webhooks
+  # for compute incidents and drives a 6-step AI pipeline:
   #   1. Receives Alertmanager webhooks (POST /webhook)
-  #   2. Translates each firing alert into a xyOps incident ticket
-  #      via the xyOps REST API
-  #   3. Closes xyOps tickets when alerts resolve
-  #   4. Is fully instrumented with OpenTelemetry — bridge activity
-  #      appears as traces in Tempo alongside your app traces
+  #   2. Fetches metrics from Prometheus + logs from Loki
+  #   3. Runs AI analysis (OpenAI/Claude with deterministic fallback)
+  #   4. Creates enriched xyOps incident ticket
+  #   5. Routes through approval workflow
+  #   6. Executes Ansible playbook via ansible-runner
   #
-  # Every xyOps ticket created by the bridge contains:
-  #   - Service name, alert name, severity
+  # Every xyOps ticket created contains:
+  #   - Service name, alert name, severity, risk_score
   #   - Link to the Grafana dashboard
-  #   - The bridge span's trace_id → click it → see the exact moment
+  #   - The agent span's trace_id → click it → see the exact moment
   #     in Tempo when the incident was detected
   #
   # Data flow:
-  #   Alertmanager → POST /webhook → bridge.process_alert()
+  #   Alertmanager → POST /webhook → compute-agent pipeline
   #     → POST xyops:5522/api/app/create_ticket/v1
   #     → OTel spans → otel-collector → Tempo
   #
   # Ports
   # ─────
-  #   9000  Bridge webhook endpoint  POST http://localhost:9000/webhook
-  #   9000  Health check             GET  http://localhost:9000/health
+  #   9000  Webhook endpoint  POST http://localhost:9000/webhook
+  #   9000  Health check      GET  http://localhost:9000/health
+  #   9000  Metrics           GET  http://localhost:9000/metrics
   #
-  # To manually trigger a test alert to verify the integration:
+  # To manually trigger a test alert:
   #   curl -X POST http://localhost:9000/webhook \
   #     -H "Content-Type: application/json" \
-  #     -d '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"TestAlert","service_name":"frontend-api","severity":"warning"},"annotations":{"summary":"Manual test alert","description":"Testing AIOps bridge","dashboard_url":"http://localhost:3001"},"startsAt":"2026-03-16T10:00:00Z"}]}'
+  #     -d '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"TestAlert","service_name":"frontend-api","severity":"warning"},"annotations":{"summary":"Manual test alert","description":"Testing compute agent","dashboard_url":"http://localhost:3001"},"startsAt":"2026-03-16T10:00:00Z"}]}'
   # ──────────────────────────────────────────────────────────
-  aiops-bridge:
+  compute-agent:
     build:
-      context: ./aiops-bridge
-      dockerfile: Dockerfile
-    container_name: aiops-bridge
-    hostname: aiops-bridge
+      context: .
+      dockerfile: compute-agent/Dockerfile
+    container_name: compute-agent
+    hostname: compute-agent
     environment:
       # ── Target: xyOps ──────────────────────────────────────
       XYOPS_URL: "http://xyops:5522"
@@ -719,7 +720,10 @@ services:
       # ── Approval workflow ─────────────────────────────
       REQUIRE_APPROVAL: "true"     # set false to auto-execute without human sign-off
       ANSIBLE_RUNNER_URL: "http://ansible-runner:8080"
-      BRIDGE_INTERNAL_URL: "http://aiops-bridge:9000"
+      BRIDGE_INTERNAL_URL: "http://compute-agent:9000"
+
+      # ── Obs-Intelligence Engine ───────────────────────────────
+      OBS_INTELLIGENCE_URL: "http://obs-intelligence:9100"
 
       # ── Gitea git integration ────────────────────────────────
       GITEA_URL: "http://gitea:3000"
@@ -737,7 +741,7 @@ services:
       XYOPS_SERVER_HOSTNAME: "xyops"
 
       # ── OTel identity ──────────────────────────────────────
-      OTEL_SERVICE_NAME: "aiops-bridge"
+      OTEL_SERVICE_NAME: "compute-agent"
       OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=local,service.namespace=aiops"
 
       # ── OTel export → collector ────────────────────────────
@@ -745,7 +749,9 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_METRIC_EXPORT_INTERVAL_MS: "15000"
     ports:
-      - "9000:9000"    # Bridge HTTP  curl http://localhost:9000/health
+      - "9000:9000"    # Compute agent HTTP  curl http://localhost:9000/health
+    volumes:
+      - ./obs-intelligence/scenarios:/app/scenarios:ro
     depends_on:
       - otel-collector
       - alertmanager
@@ -760,7 +766,7 @@ services:
   # ticketing system, and workflow engine in one.
   #
   # In this integration, xyOps serves as:
-  #   1. Incident management: receives tickets from aiops-bridge
+  #   1. Incident management: receives tickets from compute-agent
   #      whenever Prometheus alerts fire
   #   2. Remediation engine: run jobs/workflows in response to tickets
   #      (e.g., restart a service, scale up, clear a cache)
@@ -774,8 +780,8 @@ services:
   #   1. Open http://localhost:5522
   #   2. Login: admin / admin
   #   3. Go to Admin → API Keys → Create a new API key
-  #   4. Copy the key into the XYOPS_API_KEY env var in aiops-bridge above
-  #   5. docker compose restart aiops-bridge
+  #   4. Copy the key into the XYOPS_API_KEY env var in compute-agent above
+  #   5. docker compose restart compute-agent
   #
   # Ports
   # ─────
@@ -831,7 +837,7 @@ services:
   # ansible-runner  (port 8090 on host → 8080 in container)
   #
   # Executes Ansible playbooks generated by Claude AI.
-  # Called by aiops-bridge approval_workflow.py after a human approves.
+  # Called by compute-agent approval_workflow.py after a human approves.
   # Routes: GET /health   POST /run
   #
   # Set ANSIBLE_LIVE_MODE=true only when real target infrastructure exists.
@@ -862,7 +868,7 @@ services:
   # Every remediation approval creates a branch + PR in Gitea for audit
   # trail and code review alongside the xyOps change ticket.
   #
-  # First-time setup is automated by aiops-bridge on startup:
+  # First-time setup is automated by compute-agent on startup:
   #   1. Bridge POSTs to /install to create admin user (aiops / Aiops1234!)
   #   2. Bridge creates org "aiops-org" and repo "ansible-playbooks"
   #   3. Bridge generates an API token used for all subsequent calls
@@ -900,6 +906,126 @@ services:
       - obs-net
     restart: unless-stopped
 
+  # ──────────────────────────────────────────────────────────
+  # Storage Simulator
+  #
+  # Simulates Ceph OSD / pool / PVC storage failure scenarios.
+  # Exposes Prometheus metrics that Prometheus scrapes every 15s.
+  # Use POST /scenario/{name} to trigger specific failure modes:
+  #
+  #   Scenarios:
+  #     healthy          — baseline: all OSDs up, pool at 40%, low latency
+  #     osd_down         — one OSD offline, cluster WARN, 32 degraded PGs
+  #     multi_osd_failure— two OSDs offline, cluster ERROR, 128 degraded PGs
+  #     pool_full        — SSD pool at 95%, writes throttled
+  #     latency_spike    — all PVC latency 10-40x normal
+  #     noisy_pvc        — pvc-app-0 at 10x IOPS, neighbors starved
+  #
+  # Quick commands:
+  #   Trigger OSD failure:  curl -X POST http://localhost:9200/scenario/osd_down
+  #   List scenarios:       curl http://localhost:9200/scenarios
+  #   View metrics:         curl http://localhost:9200/metrics
+  #   Reset to healthy:     curl -X POST http://localhost:9200/scenario/healthy
+  #
+  # Ports
+  # ─────
+  #   9200  Simulator HTTP + /metrics endpoint
+  # ──────────────────────────────────────────────────────────
+  storage-simulator:
+    build:
+      context: ./storage-simulator
+      dockerfile: Dockerfile
+    container_name: storage-simulator
+    hostname: storage-simulator
+    ports:
+      - "9200:9200"    # Simulator API  http://localhost:9200/scenarios
+    networks:
+      - obs-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Storage Agent
+  #
+  # Storage-specialised AIOps agent — mirrors compute-agent but
+  # focuses on Ceph OSD / pool / PVC storage incidents.
+  #
+  # Alert routing:
+  #   Alertmanager routes all alerts with domain=storage here.
+  #   storage-agent runs the same 6-step AI pipeline as compute-agent
+  #   but with storage-aware metrics fetching and remediation.
+  #
+  # xyOps integration:
+  #   On startup, provisions the "Storage AIOps Agent Pipeline" workflow
+  #   (Scheduler → Workflows) for demo and manual testing.
+  #
+  # Autonomous actions (no approval):
+  #   - NoisyPVCDetected → PVC IO throttle
+  #
+  # Approval-gated actions:
+  #   - CephOSDDown → OSD reweight
+  #   - CephPoolFull/NearFull → pool expansion advisory
+  #   - PVCHighLatency → IO investigation
+  #
+  # Human-only (never automate):
+  #   - CephMultipleOSDDown → immediate SRE escalation
+  #
+  # Ports
+  # ─────
+  #   9001  Storage agent HTTP  GET /health  POST /webhook  GET /metrics
+  # ──────────────────────────────────────────────────────────
+  storage-agent:
+    build:
+      context: .
+      dockerfile: storage-agent/Dockerfile
+    container_name: storage-agent
+    hostname: storage-agent
+    environment:
+      # ── Target: xyOps ──────────────────────────────────────
+      XYOPS_URL: "http://xyops:5522"
+      XYOPS_API_KEY: "VVAsx-c1NfnKl89LNKlx1-jKdrXqHwF2xM3i-t3xXzA"
+
+      # ── AI enrichment ──────────────────────────────────────
+      OPENAI_API_KEY:  # set via .env or environment — never commit real keys
+      AI_MODEL: "gpt-4o"
+      LOKI_URL: "http://loki:3100"
+      PROMETHEUS_URL: "http://prometheus:9090"
+      STORAGE_SIMULATOR_URL: "http://storage-simulator:9200"
+
+      # ── Notifications ──────────────────────────────────────
+      NOTIFY_EMAIL: "omkar.umrani@gmail.com"
+
+      # ── Approval workflow ──────────────────────────────────
+      STORAGE_REQUIRE_APPROVAL: "true"    # set false to auto-execute without sign-off
+      ANSIBLE_RUNNER_URL: "http://ansible-runner:8080"
+      BRIDGE_INTERNAL_URL: "http://storage-agent:9001"
+
+      # ── Obs-Intelligence Engine ───────────────────────────────
+      OBS_INTELLIGENCE_URL: "http://obs-intelligence:9100"
+
+      # ── Workflow step visibility ───────────────────────────
+      WORKFLOW_STEP_DELAY_SECONDS: "5"
+      XYOPS_SERVER_HOSTNAME: "xyops"
+
+      # ── OTel identity ──────────────────────────────────────
+      OTEL_SERVICE_NAME: "storage-agent"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=local,service.namespace=aiops"
+
+      # ── OTel export → collector ────────────────────────────
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_METRIC_EXPORT_INTERVAL_MS: "15000"
+    ports:
+      - "9001:9001"    # Storage agent HTTP  http://localhost:9001/health
+    volumes:
+      - ./obs-intelligence/scenarios:/app/scenarios:ro
+    depends_on:
+      - otel-collector
+      - alertmanager
+      - storage-simulator
+    networks:
+      - obs-net
+    restart: unless-stopped
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Named volumes
 # Docker manages these on the host.  They survive "docker compose down" but are
@@ -912,6 +1038,63 @@ services:
 #   troublemaker-data  — Scenario schedule CSV  (GET http://localhost:8088/scenarios)
 #   xyops-data         — xyOps SQLite DB, tickets, jobs, config (AIOps platform)
 # ──────────────────────────────────────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────
+  # Obs-Intelligence Engine
+  #
+  # Standalone intelligence microservice providing:
+  #   - Periodic anomaly detection (Z-score via Prometheus PromQL subqueries)
+  #   - Linear-regression metric forecasting (numpy)
+  #   - Pre-computed intelligence state for domain agents to consume
+  #   - Prometheus metrics: obs_intelligence_* gauges/counters
+  #
+  # Domain agents call GET /intelligence/current to enrich LLM context
+  # without running their own Prometheus analysis.
+  #
+  # Endpoints
+  # ─────────
+  #   9100  Health:      GET  http://localhost:9100/health
+  #   9100  Metrics:     GET  http://localhost:9100/metrics
+  #   9100  Intel state: GET  http://localhost:9100/intelligence/current
+  #   9100  On-demand:   POST http://localhost:9100/analyze
+  # ──────────────────────────────────────────────────────────
+  obs-intelligence:
+    build:
+      context: ./obs-intelligence
+      dockerfile: Dockerfile
+    container_name: obs-intelligence
+    hostname: obs-intelligence
+    environment:
+      # ── Data sources ────────────────────────────────────────
+      PROMETHEUS_URL: "http://prometheus:9090"
+      LOKI_URL: "http://loki:3100"
+
+      # ── Anomaly detection tuning ────────────────────────────
+      ANOMALY_Z_THRESHOLD: "2.5"
+      ANOMALY_WINDOW_MINUTES: "30"
+
+      # ── Forecast tuning ────────────────────────────────────
+      FORECAST_HORIZON_MINUTES: "60"
+
+      # ── OTel identity ──────────────────────────────────────
+      OTEL_SERVICE_NAME: "obs-intelligence"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=local,service.namespace=aiops"
+
+      # ── OTel export → collector ────────────────────────────
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_METRIC_EXPORT_INTERVAL_MS: "15000"
+    ports:
+      - "9100:9100"    # Intelligence API  http://localhost:9100/health
+    volumes:
+      - ./obs-intelligence/scenarios:/app/scenarios:ro
+    depends_on:
+      - prometheus
+      - loki
+      - otel-collector
+    networks:
+      - obs-net
+    restart: unless-stopped
+
 volumes:
   prometheus-data:
     driver: local

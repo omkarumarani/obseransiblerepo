@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "obs-intelligence"
+version = "1.0.0"
+requires-python = ">=3.11"
+description = "Shared intelligence core and telemetry utils for the multi-agent AIOps platform"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[tool.setuptools.packages.find]
+# Look one directory up from this pyproject.toml (/app/obs_intelligence/ → look in /app/)
+# so that the obs_intelligence package itself is discovered.
+where = [".."]
+include = ["obs_intelligence*"]

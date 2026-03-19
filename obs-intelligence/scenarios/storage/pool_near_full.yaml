@@ -1,0 +1,40 @@
+scenario_id:   pool_near_full
+display_name:  "Storage Pool Near Full"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["CephPoolNearFull"] in storage_analyst.py
+
+alert_name_patterns:
+  - "CephPoolNearFull"
+  - "PoolUsageHigh*"
+
+alert_match_weight: 0.35
+confidence_threshold: 0.30
+
+action:       pool_expand_advisory
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  A storage pool is approaching capacity (> 85% used). Write performance will
+  degrade as the pool approaches 95%. Plan expansion or data archival before
+  the pool becomes critically full and starts rejecting writes. If data growth
+  is from a specific PVC or workload, target that first.
+
+playbook_hint: >
+  ceph osd pool set <pool> pg_num <new_pg_count>
+  OR extend quota: ceph osd pool set-quota <pool> max_bytes <new_bytes>
+  OR archive stale data to cold storage / object store
+  MONITOR: ceph df; set alert threshold at 85% to give 24h reaction time
+
+conditions:
+  - field:     pool_usage_pct
+    operator:  gte
+    threshold: 0.85
+    weight:    0.50   # primary: pool fill above warning threshold
+
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 1.0
+    weight:    0.15   # cluster enters WARN when pool is near-full

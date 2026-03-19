@@ -1,0 +1,54 @@
+scenario_id:   cascading_timeout_chain
+display_name:  "Cascading Timeout Chain"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "ServiceTimeout*"
+  - "CascadingFailure*"
+  - "DependencyTimeout*"
+  - "HighTimeout*"
+  - "CircuitBreakerOpen*"
+
+alert_match_weight: 0.30
+confidence_threshold: 0.30
+
+action:       circuit_break_dependency
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Timeout errors are propagating through the service dependency chain.
+  A slow or failed downstream dependency is causing upstream services to
+  exhaust their connection pools and timeout budgets. Both p99 latency and
+  error rate are simultaneously elevated — the classic signature of cascading
+  failure. Apply a circuit breaker to the failing dependency to stop the blast
+  radius from spreading further.
+
+playbook_hint: >
+  1. Identify the root slow dependency via Tempo waterfall (find longest span)
+  2. Apply circuit-breaker to that dependency
+  3. Add timeout shielding with a sane default (e.g. 5s) to inter-service calls
+  4. Check downstream service health endpoints directly
+  5. If dependency is owned by another team: trigger their on-call escalation
+
+conditions:
+  - field:     latency_p99
+    operator:  gte
+    threshold: 5.0
+    weight:    0.40   # extreme tail latency = requests stuck waiting for downstream
+
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.10
+    weight:    0.30   # many requests timing out
+
+  - field:     latency_p95
+    operator:  gte
+    threshold: 2.0
+    weight:    0.15   # p95 also elevated (not just top 1%)
+
+  - field:     recent_error_count
+    operator:  gte
+    threshold: 10
+    weight:    0.15   # log evidence of repeated timeouts

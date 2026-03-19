@@ -1,0 +1,46 @@
+scenario_id:   collector_overload
+display_name:  "OTel Collector Overload"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "CollectorOverload*"
+  - "OTelCollector*"
+  - "TelemetryBackpressure*"
+  - "CollectorHighCPU*"
+  - "CollectorDropping*"
+
+alert_match_weight: 0.40
+confidence_threshold: 0.30
+
+action:       reduce_otel_sampling
+autonomy:     autonomous
+irreversible: false
+
+rca: >
+  The OpenTelemetry Collector is overloaded. CPU and memory are saturated,
+  causing backpressure and potential span/metric drops. Reducing the sampling
+  ratio is an autonomous, immediately reversible action that relieves pressure
+  without altering application behaviour or requiring a deployment restart.
+
+playbook_hint: >
+  IMMEDIATE: reduce OTEL_SAMPLER_RATIO from 1.0 to 0.1 via ConfigMap and rolling restart
+  MEDIUM-TERM: scale otel-collector deployment horizontally (--replicas=3)
+  INVESTIGATE: check otelcol_exporter_queue_size and otelcol_processor_dropped metrics
+  LONG-TERM: consider tail sampling to drop low-value traces instead of head sampling
+
+conditions:
+  - field:     cpu_usage
+    operator:  gte
+    threshold: 0.90
+    weight:    0.50   # primary: collector is CPU-bound
+
+  - field:     memory_usage
+    operator:  gte
+    threshold: 0.85
+    weight:    0.30
+
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.01
+    weight:    0.20   # collector errors appear as service-level errors

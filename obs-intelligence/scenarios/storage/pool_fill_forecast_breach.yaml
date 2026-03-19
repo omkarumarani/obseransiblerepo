@@ -1,0 +1,36 @@
+scenario_id:   pool_fill_forecast_breach
+display_name:  "Pool Fill Forecast Breach"
+domain:        storage
+version:       "1.0"
+
+alert_name_patterns:
+  - "PoolFillForecast*"
+  - "StorageCapacityForecast*"
+  - "PoolGrowthRate*"
+
+alert_match_weight: 0.45
+confidence_threshold: 0.30
+
+action:       capacity_planning_escalation
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Forecast modelling indicates a storage pool will breach its capacity
+  threshold within the next 72 hours based on current growth rate.
+  The pool fill percentage is in the elevated-but-not-critical range,
+  but trending upward. Proactive expansion or data archival is recommended
+  before the near-full alert fires and write performance degrades.
+
+playbook_hint: >
+  1. Review pool growth rate: ceph df + compare with 24h-ago snapshot
+  2. Identify top data contributors: rados df; show by namespace
+  3. Archive or compress cold data: identify objects older than 30 days
+  4. Plan OSD addition: ceph osd add → rebalance will take ~2h per TB
+  5. Set alert at 80% to give 48h lead time for next capacity event
+
+conditions:
+  - field:     pool_usage_pct
+    operator:  gte
+    threshold: 0.70
+    weight:    0.55   # pool above 70% → within forecast breach window

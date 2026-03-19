@@ -1,0 +1,57 @@
+scenario_id:   cpu_saturation
+display_name:  "CPU Saturation"
+domain:        compute
+version:       "1.0"
+
+# ── Alert name patterns ───────────────────────────────────────────────────────
+# fnmatch patterns — all are checked; scenario is skipped if none match.
+alert_name_patterns:
+  - "HighCPU*"
+  - "CPUSaturation"
+  - "CPUThrottling*"
+  - "HighCpuUsage"
+
+# alert_match_weight: base confidence added when alert name matches.
+# This lets the scenario fire even before metric conditions are all populated.
+alert_match_weight: 0.30
+
+confidence_threshold: 0.30
+
+# ── Autonomy ──────────────────────────────────────────────────────────────────
+action:       cpu_scale_out
+autonomy:     approval_gated
+irreversible: false
+
+# ── Remediation text ─────────────────────────────────────────────────────────
+rca: >
+  Service CPU is saturated above 85%. The resulting CPU throttling is degrading
+  response latencies. Scale the deployment horizontally or identify the
+  offending high-CPU workload and apply resource limits before the process
+  is kernel-throttled or OOM-killed.
+
+playbook_hint: >
+  kubectl scale deployment/<svc> --replicas=<n+2>   OR
+  identify high-CPU thread via async-profiler / py-spy;
+  apply CPU limit: kubectl set resources deployment/<svc> --limits=cpu=1000m
+
+# ── Matching conditions ───────────────────────────────────────────────────────
+# field names map 1-to-1 to ObsFeatures attributes.
+# operator:   gt | lt | gte | lte | eq | ne  (numeric)
+#             true | false                    (boolean field)
+# weight:     contribution to confidence score when this condition holds.
+# All weights are normalised along with alert_match_weight.
+conditions:
+  - field:     cpu_usage
+    operator:  gte
+    threshold: 0.85
+    weight:    0.40   # primary signal
+
+  - field:     latency_p99
+    operator:  gte
+    threshold: 1.0
+    weight:    0.20   # CPU saturation typically shows up in tail latency
+
+  - field:     memory_usage
+    operator:  gte
+    threshold: 0.70
+    weight:    0.10   # memory also elevated under CPU pressure (GC, etc.)

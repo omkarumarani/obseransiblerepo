@@ -1,0 +1,47 @@
+scenario_id:   single_osd_down
+display_name:  "Single OSD Down"
+domain:        storage
+version:       "1.0"
+
+# Converted from _DETERMINISTIC_ACTIONS["CephOSDDown"] in storage_analyst.py
+
+alert_name_patterns:
+  - "CephOSDDown"
+
+# Alert-name match alone gives confidence 0.40; paired with metric conditions
+# this will comfortably exceed 0.60 (the acceptance threshold for task 4.24).
+alert_match_weight: 0.40
+
+confidence_threshold: 0.30
+
+action:       osd_reweight
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  A Ceph OSD has gone offline. The cluster has entered WARN state with
+  degraded placement groups. Reweighting the OSD to 0.0 removes it from
+  the CRUSH map and triggers data rebalancing across remaining OSDs,
+  recovering the cluster to HEALTH_OK.
+
+playbook_hint: >
+  ceph osd reweight <osd_id> 0.0
+  ceph osd out <osd_id>
+  watch ceph -s (wait for recovery)
+  OPTIONAL: ceph osd purge <osd_id> --yes-i-really-mean-it (irreversible)
+
+conditions:
+  - field:     degraded_pgs
+    operator:  gte
+    threshold: 1
+    weight:    0.30   # degraded PGs confirm OSD-level data loss risk
+
+  - field:     cluster_health_score
+    operator:  lte
+    threshold: 1.0
+    weight:    0.20   # 0=ERROR 1=WARN 2=OK — OSD down → at most WARN
+
+  - field:     osd_up_count
+    operator:  gte
+    threshold: 1
+    weight:    0.10   # at least one OSD still up (not multi-OSD failure)

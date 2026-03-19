@@ -1,0 +1,51 @@
+scenario_id:   queue_backlog
+display_name:  "Queue Backlog / Worker Saturation"
+domain:        compute
+version:       "1.0"
+
+alert_name_patterns:
+  - "QueueBacklog*"
+  - "HighQueueDepth*"
+  - "WorkerSaturation*"
+  - "MessageBacklog*"
+
+alert_match_weight: 0.35
+confidence_threshold: 0.30
+
+action:       scale_workers
+autonomy:     approval_gated
+irreversible: false
+
+rca: >
+  Request queue is backing up due to insufficient worker capacity.
+  Latency is spiking proportionally to queue depth while error rate
+  remains moderate. Root cause: either the arrival rate has increased
+  beyond worker throughput, or individual worker processing time has
+  increased (slow DB, I/O wait, etc.). Scale workers or investigate
+  per-worker throughput degradation.
+
+playbook_hint: >
+  kubectl scale deployment/<svc>-worker --replicas=<current+4>
+  OR: investigate per-worker processing time; check consumer lag in Grafana;
+  look for blocking synchronous calls in worker code that could be made async.
+
+conditions:
+  - field:     latency_p99
+    operator:  gte
+    threshold: 3.0
+    weight:    0.40   # deep queue → very high tail latency
+
+  - field:     request_rate
+    operator:  gte
+    threshold: 20
+    weight:    0.25   # high request rate driving queue depth
+
+  - field:     error_rate
+    operator:  gte
+    threshold: 0.03
+    weight:    0.20   # some requests time out before workers pick them up
+
+  - field:     cpu_usage
+    operator:  gte
+    threshold: 0.60
+    weight:    0.15   # workers busy
