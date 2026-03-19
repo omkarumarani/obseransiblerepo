@@ -704,7 +704,7 @@ services:
       # OpenAI key — enables AI-powered RCA, Ansible playbook generation,
       # and ticket enrichment.  Uses gpt-4o-mini by default (cost-efficient).
       # To switch model: change AI_MODEL below (e.g. gpt-4o, gpt-4-turbo).
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"  # set via .env or environment — never commit real keys
+      OPENAI_API_KEY:  # set via .env or environment — never commit real keys
       AI_MODEL: "gpt-4o"
       LOKI_URL: "http://loki:3100"
       PROMETHEUS_URL: "http://prometheus:9090"
