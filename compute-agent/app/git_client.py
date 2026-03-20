@@ -412,3 +412,31 @@ async def close_pull_request(pr_number: int, http: httpx.AsyncClient) -> bool:
     ok = resp.status_code in (200, 201)
     logger.info("Close PR #%d  ok=%s  status=%d", pr_number, ok, resp.status_code)
     return ok
+
+
+async def check_pr_merged(pr_number: int, http: httpx.AsyncClient) -> bool:
+    """
+    Return True if the Gitea PR has already been merged by the user.
+
+    Used during approval decision: if the user merged the PR manually (as
+    instructed), we skip calling merge_pull_request() and go straight to
+    Ansible execution.
+    """
+    token = _gitea_token
+    if not token or not pr_number:
+        return False
+    try:
+        resp = await http.get(
+            f"{GITEA_URL}/api/v1/repos/{GITEA_ORG}/{GITEA_REPO}/pulls/{pr_number}",
+            headers=_auth_header(token),
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            merged = data.get("merged", False)
+            state  = data.get("state", "open")
+            logger.info("PR #%d  merged=%s  state=%s", pr_number, merged, state)
+            return bool(merged)
+    except Exception as exc:
+        logger.warning("check_pr_merged PR #%d failed: %s", pr_number, exc)
+    return False

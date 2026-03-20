@@ -697,15 +697,13 @@ services:
     environment:
       # ── Target: xyOps ──────────────────────────────────────
       XYOPS_URL: "http://xyops:5522"
-      # xyOps API key — set this after first xyOps login
-      # (Admin → API Keys → Create Key → copy here and restart bridge)
-      XYOPS_API_KEY: "VVAsx-c1NfnKl89LNKlx1-jKdrXqHwF2xM3i-t3xXzA"
+      # xyOps API key — set in .env file (see .env.example)
+      XYOPS_API_KEY: "${XYOPS_API_KEY}"
 
       # ── AI enrichment ──────────────────────────────────
-      # OpenAI key — enables AI-powered RCA, Ansible playbook generation,
-      # and ticket enrichment.  Uses gpt-4o-mini by default (cost-efficient).
+      # OpenAI key — set in .env file (see .env.example)
       # To switch model: change AI_MODEL below (e.g. gpt-4o, gpt-4-turbo).
-      OPENAI_API_KEY:  # set via .env or environment — never commit real keys
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
       AI_MODEL: "gpt-4o"
       LOKI_URL: "http://loki:3100"
       PROMETHEUS_URL: "http://prometheus:9090"
@@ -982,10 +980,10 @@ services:
     environment:
       # ── Target: xyOps ──────────────────────────────────────
       XYOPS_URL: "http://xyops:5522"
-      XYOPS_API_KEY: "VVAsx-c1NfnKl89LNKlx1-jKdrXqHwF2xM3i-t3xXzA"
+      XYOPS_API_KEY: "${XYOPS_API_KEY}"
 
       # ── AI enrichment ──────────────────────────────────────
-      OPENAI_API_KEY:  # set via .env or environment — never commit real keys
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
       AI_MODEL: "gpt-4o"
       LOKI_URL: "http://loki:3100"
       PROMETHEUS_URL: "http://prometheus:9090"
@@ -1067,6 +1065,10 @@ services:
       # ── Data sources ────────────────────────────────────────
       PROMETHEUS_URL: "http://prometheus:9090"
       LOKI_URL: "http://loki:3100"
+
+      # ── AI enrichment ──────────────────────────────────────
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      OPENAI_MODEL: "gpt-4o"
 
       # ── Anomaly detection tuning ────────────────────────────
       ANOMALY_Z_THRESHOLD: "2.5"

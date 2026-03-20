@@ -44,6 +44,7 @@ import httpx
 
 from .git_client import (
     GITEA_ENABLED,
+    check_pr_merged,
     close_pull_request,
     commit_playbook,
     create_pull_request,
@@ -92,6 +93,9 @@ class ApprovalRequest:
     gitea_pr_url: str = ""
     gitea_pr_num: int = 0
     gitea_branch: str = ""
+    # Pre-commit Ansible validation
+    validation_passed: bool = False
+    validation_result: dict = field(default_factory=dict)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -143,7 +147,98 @@ async def request_approval(
     )
     _pending[approval_id] = req
 
-    # ── Create Approve / Decline events in xyOps (ticket action buttons) ──────
+    # ── Step 0: Validate playbook BEFORE any git operations ───────────────────
+    # Ansible code is tested first.  Only if validation passes do we commit to
+    # Gitea and open a PR.  If it fails the user sees a clear explanation in the
+    # incident ticket and no code is pushed anywhere.
+    if http and playbook:
+        val_payload = {
+            "playbook_yaml": playbook,
+            "service_name":  service_name,
+            "alert_name":    alert_name,
+            "trace_id":      bridge_trace_id,
+            "test_cases":    test_cases,
+        }
+        try:
+            val_resp = await http.post(
+                f"{ANSIBLE_RUNNER_URL}/validate",
+                json=val_payload,
+                timeout=90.0,
+            )
+            if val_resp.status_code == 200:
+                val               = val_resp.json()
+                all_passed        = val.get("all_passed", True)
+                test_results      = val.get("test_results", [])
+                passed_count      = sum(1 for t in test_results if t.get("status") == "PASSED")
+                total_count       = len(test_results)
+                req.validation_passed = all_passed
+                req.validation_result = {
+                    "test_results": test_results,
+                    "stdout":       val.get("stdout", ""),
+                    "all_passed":   all_passed,
+                }
+                logger.info(
+                    "Pre-commit validation: %s/%s passed  alert=%s",
+                    passed_count, total_count, alert_name,
+                )
+
+                if not all_passed:
+                    # Build failure comment for the incident ticket
+                    fail_lines = [
+                        "## \u274c Ansible Pre-commit Validation FAILED",
+                        "",
+                        "The auto-generated playbook **failed validation** and was "
+                        "**NOT pushed to Gitea**.  No automated changes will be made.",
+                        "",
+                        f"**Result:** {passed_count}/{total_count} test cases passed",
+                        "",
+                        "| Test Case | Status | Detail |",
+                        "|---|---|---|",
+                    ]
+                    for tc in test_results:
+                        icon = "\u2705" if tc.get("status") == "PASSED" else "\u274c"
+                        fail_lines.append(
+                            f"| `{tc.get('id', '?')}` {tc.get('name', '')} "
+                            f"| {icon} {tc.get('status', '?')} "
+                            f"| {tc.get('output', '')[:100]} |"
+                        )
+                    fail_lines += [
+                        "",
+                        "```",
+                        val.get("stdout", "")[:1500],
+                        "```",
+                        "",
+                        "> **Manual review required.** "
+                        "Fix the playbook or investigate the alert manually.",
+                    ]
+                    await xyops_post(
+                        "/api/app/add_ticket_change/v1",
+                        {
+                            "id":     incident_ticket_id,
+                            "change": {"type": "comment", "body": "\n".join(fail_lines)},
+                        },
+                    )
+                    req.status = "validation_failed"
+                    logger.warning(
+                        "Approval blocked — playbook failed pre-commit validation  alert=%s",
+                        alert_name,
+                    )
+                    return req
+            else:
+                # Non-200 from validator → treat as passed (fail-open) and log
+                req.validation_passed = True
+                logger.warning(
+                    "Validator returned HTTP %d — treating as passed", val_resp.status_code
+                )
+        except Exception as exc:
+            # Network error → treat as passed and log
+            req.validation_passed = True
+            logger.warning("Validation call failed (fail-open): %s", exc)
+    else:
+        # No playbook or no http client → skip validation
+        req.validation_passed = True
+
+    # ── Step 1: Create Approve / Decline events in xyOps ─────────────────────
     bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://aiops-bridge:9000")
     try:
         approve_evt, decline_evt = await create_approval_events(
@@ -156,7 +251,8 @@ async def request_approval(
         approve_evt = ""
         decline_evt = ""
 
-    # ── Gitea: commit playbook to a branch and open a PR ──────────────────────
+    # ── Step 2: Gitea: commit playbook to a branch and open a PR ─────────────────────
+    # Validation already passed so it’s safe to commit the code to git.
     if http and GITEA_ENABLED and playbook:
         try:
             git_info = await commit_playbook(
@@ -281,23 +377,51 @@ async def process_decision(
         )
         return {"status": "declined", "approval_id": approval_id}
 
-    # ── Approved → trigger Ansible execution ───────────────
+    # ── Approved → check PR is merged, then trigger Ansible execution ─────────
     req.status = "approved"
     logger.info(
-        "Approval %s APPROVED by %s  alert=%s — triggering Ansible",
+        "Approval %s APPROVED by %s  alert=%s — checking PR merge status",
         approval_id, decided_by, req.alert_name,
     )
-    # Merge the Gitea PR now that the human has approved
+
+    # If a PR exists, the user must merge it themselves before we execute.
+    # The PR being on `main` is the authorisation record in Git history.
     if req.gitea_pr_num:
         try:
-            merged = await merge_pull_request(req.gitea_pr_num, http)
-            logger.info("Gitea PR #%d merged=%s", req.gitea_pr_num, merged)
+            is_merged = await check_pr_merged(req.gitea_pr_num, http)
         except Exception as exc:
-            logger.warning("Could not merge Gitea PR: %s", exc)
+            is_merged = False
+            logger.warning("Could not check PR merge status: %s", exc)
+
+        if not is_merged:
+            # Reset to pending and remind the user
+            req.status = "pending"
+            pr_remind = (
+                f"## ⚠️ PR Not Yet Merged\n\n"
+                f"You clicked **Approve** but PR [#{req.gitea_pr_num}]({req.gitea_pr_url}) "
+                f"has **not been merged** yet.\n\n"
+                f"**Please complete both steps in order:**\n\n"
+                f"1. 🔗 [Merge PR #{req.gitea_pr_num}]({req.gitea_pr_url}) on Gitea "
+                f"(review the YAML diff, then click 'Merge Pull Request')\n"
+                f"2. ✅ Return here and click **Approve Remediation** again\n\n"
+                f"The playbook will execute automatically once both conditions are met."
+            )
+            await _update_approval_ticket(req=req, comment=pr_remind, xyops_post=xyops_post)
+            logger.info(
+                "Approval %s reset to pending — PR #%d not merged yet",
+                approval_id, req.gitea_pr_num,
+            )
+            return {"status": "pending_pr_merge", "approval_id": approval_id,
+                    "message": f"Please merge PR #{req.gitea_pr_num} first, then re-approve"}
+
+        # PR is already merged by the user — proceed straight to execution
+        logger.info("PR #%d already merged — proceeding to Ansible execution", req.gitea_pr_num)
+
     approve_msg = (
-        f"## Remediation Approved\n\n"
+        f"## ✅ Remediation Approved\n\n"
         f"Approved by **{decided_by}** at {now}\n\n"
         f"Notes: {notes or '(none)'}\n\n"
+        f"{'PR [#' + str(req.gitea_pr_num) + '](' + req.gitea_pr_url + ') merged ✓  ' if req.gitea_pr_num else ''}"
         f"Ansible playbook execution started..."
     )
     await _update_approval_ticket(req=req, comment=approve_msg, xyops_post=xyops_post)
@@ -331,8 +455,8 @@ async def _execute_playbook(
     xyops_post,
 ) -> None:
     """
-    1. POST to /validate (dry-run with test cases) — post results to ticket.
-    2. POST to /run (real or simulated execution) — post final results.
+    Validation was already performed pre-commit in request_approval().
+    Go straight to /run — no duplicate validate step needed.
     """
     run_payload = {
         "playbook_yaml": req.ansible_playbook,
@@ -342,46 +466,7 @@ async def _execute_playbook(
         "test_cases": req.test_cases,
     }
 
-    # ── Step 1: Validate (dry-run) ──────────────────────────────────────────
-    try:
-        val_resp = await http.post(
-            f"{ANSIBLE_RUNNER_URL}/validate",
-            json=run_payload,
-            timeout=90.0,
-        )
-        if val_resp.status_code == 200:
-            val = val_resp.json()
-            test_results = val.get("test_results", [])
-            all_passed   = val.get("all_passed", True)
-            status_icon  = "✅" if all_passed else "⚠️"
-            passed_count = sum(1 for t in test_results if t.get("status") == "PASSED")
-            total_count  = len(test_results)
-
-            val_comment = (
-                f"## {status_icon} Pre-execution Validation ({passed_count}/{total_count} passed)\n\n"
-                f"| Test Case | Status | Detail |\n|---|---|---|\n"
-            )
-            for tc in test_results:
-                icon = "✅" if tc.get("status") == "PASSED" else "❌"
-                val_comment += (
-                    f"| `{tc.get('id', '?')}` {tc.get('name', '')} "
-                    f"| {icon} {tc.get('status', '?')} "
-                    f"| {tc.get('output', '')[:80]} |\n"
-                )
-            val_comment += f"\n```\n{val.get('stdout', '')[:1500]}\n```\n"
-            if not all_passed:
-                val_comment += "\n> ⚠️ Some pre-checks failed — playbook will still execute, review output carefully.\n"
-
-            await _update_approval_ticket(req=req, comment=val_comment, xyops_post=xyops_post)
-    except Exception as exc:
-        logger.warning("Validation step failed (non-fatal): %s", exc)
-        await _update_approval_ticket(
-            req=req,
-            comment=f"## ℹ️ Validation Skipped\n\n`{exc}`\n\nProceeding with execution.",
-            xyops_post=xyops_post,
-        )
-
-    # ── Step 2: Execute ───────────────────────────────────────────────────────
+    # ── Execute ───────────────────────────────────────────────────────────────
     try:
         resp = await http.post(
             f"{ANSIBLE_RUNNER_URL}/run",
@@ -554,14 +639,33 @@ def _build_approval_body(
 
     if req.gitea_pr_url:
         from .git_client import GITEA_ORG, GITEA_REPO, GITEA_URL  # noqa: PLC0415
+        # Show pre-commit validation summary inline with the PR link
+        val_summary = ""
+        if req.validation_result:
+            vr = req.validation_result
+            test_results = vr.get("test_results", [])
+            passed  = sum(1 for t in test_results if t.get("status") == "PASSED")
+            total   = len(test_results)
+            val_icon = "\u2705" if vr.get("all_passed") else "\u26a0\ufe0f"
+            val_summary = f" {val_icon} Validation: {passed}/{total} test cases passed"
         body += (
-            f"### 📁 Gitea — Ansible Playbook PR\n\n"
-            f"The playbook YAML has been committed for code review before execution:\n\n"
+            f"### \U0001f4c1 Gitea \u2014 Ansible Playbook PR\n\n"
+            f"The playbook YAML has been **validated**{val_summary} and **committed** to Gitea:\n\n"
             f"| Field | Value |\n|---|---|\n"
-            f"| **Pull Request** | [View PR #{req.gitea_pr_num}]({req.gitea_pr_url}) |\n"
+            f"| **Pull Request** | [View PR \#{req.gitea_pr_num}]({req.gitea_pr_url}) |\n"
             f"| **Branch** | `{req.gitea_branch}` |\n"
             f"| **Repository** | {GITEA_URL}/{GITEA_ORG}/{GITEA_REPO} |\n\n"
-            f"Review the YAML diff in Gitea before approving.\n\n"
+            f"---\n\n"
+            f"## \U0001f6a6 ACTION REQUIRED \u2014 TWO STEPS TO AUTHORIZE\n\n"
+            f"**Step 1 \u2014 Merge the PR on Gitea:**\n\n"
+            f"> \U0001f517 Open [PR \#{req.gitea_pr_num}]({req.gitea_pr_url}), review the "
+            f"YAML diff, then click \u2018**Merge Pull Request**\u2019.\n\n"
+            f"Merging records your authorisation in Git history.\n\n"
+            f"**Step 2 \u2014 Click Approve below:**\n\n"
+            f"> After merging, return to this xyOps ticket and click "
+            f"**\u25b6 Run \u2018Approve Remediation\u2019** (or use the curl command).\n\n"
+            f"The Ansible playbook will execute automatically "
+            f"once the PR is merged **and** you click Approve.\n\n"
         )
 
     if pr_title:
