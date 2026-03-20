@@ -48,6 +48,13 @@ obs_intelligence_forecast_breach_minutes = PromGauge(
     ["metric_name"],
 )
 
+# ── Predictive alert metrics ─────────────────────────────────────────────────
+obs_intelligence_predictive_alerts_sent_total = PromCounter(
+    "obs_intelligence_predictive_alerts_sent_total",
+    "Total predictive alerts sent to domain agents (high risk, no active Prometheus alert)",
+    ["domain"],
+)
+
 # ── Background loop performance ───────────────────────────────────────────────
 obs_intelligence_analysis_loop_duration_seconds = PromHistogram(
     "obs_intelligence_analysis_loop_duration_seconds",

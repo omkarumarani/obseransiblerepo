@@ -22,6 +22,7 @@ and is read by domain agents to enrich their LLM analysis context.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -38,6 +39,7 @@ from obs_intelligence.metrics_publisher import (
     obs_intelligence_anomaly_z_score,
     obs_intelligence_forecast_breach_minutes,
     obs_intelligence_forecast_loop_runs_total,
+    obs_intelligence_predictive_alerts_sent_total,
 )
 
 logger = logging.getLogger("obs-intelligence.background")
@@ -54,6 +56,16 @@ current_intelligence: dict[str, Any] = {
 
 _scheduler: AsyncIOScheduler | None = None
 _http: httpx.AsyncClient | None = None
+
+# ── Domain agent URLs (read once at scheduler start) ─────────────────────────
+_COMPUTE_AGENT_URL: str = os.getenv("COMPUTE_AGENT_URL", "http://compute-agent:9000")
+_STORAGE_AGENT_URL: str = os.getenv("STORAGE_AGENT_URL", "http://storage-agent:9001")
+_PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
+
+# Thresholds for predictive alert dispatch
+_PREDICTIVE_RISK_THRESHOLD: float = float(os.getenv("PREDICTIVE_RISK_THRESHOLD", "0.75"))
+_PREDICTIVE_CONFIDENCE_THRESHOLD: float = float(os.getenv("PREDICTIVE_CONFIDENCE_THRESHOLD", "0.7"))
+_PREDICTIVE_Z_THRESHOLD: float = float(os.getenv("ANOMALY_Z_THRESHOLD", "2.5"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -107,6 +119,10 @@ async def run_analysis_loop() -> None:
             len(all_signals),
             elapsed,
         )
+
+        # After updating shared state, check if we should fire predictive alerts
+        await _dispatch_predictive_alerts(all_signals)
+
     except Exception as exc:
         elapsed = time.perf_counter() - start
         obs_intelligence_analysis_loop_runs_total.labels(status="error").inc()
@@ -157,6 +173,136 @@ async def run_forecasting() -> None:
     except Exception as exc:
         obs_intelligence_forecast_loop_runs_total.labels(status="error").inc()
         logger.error("Forecasting loop error: %s", exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Predictive alert dispatch
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _has_active_prometheus_alerts(domain: str) -> bool:
+    """
+    Query Prometheus to check whether any alerts are actively firing for
+    the given domain.  Returns True if at least one firing alert exists.
+    Uses `ALERTS{alertstate="firing",domain="<domain>"}` via the
+    Prometheus HTTP API.  Falls back to False on any error so predictive
+    alerts can still fire if Prometheus is temporarily unreachable.
+    """
+    if _http is None:
+        return False
+    try:
+        # Try domain-scoped check first, then fall back to any firing alert
+        queries = [
+            f'ALERTS{{alertstate="firing",domain="{domain}"}}',
+            f'ALERTS{{alertstate="firing",team="{domain}"}}',
+        ]
+        for q in queries:
+            r = await _http.get(
+                f"{_PROMETHEUS_URL}/api/v1/query",
+                params={"query": q},
+                timeout=5.0,
+            )
+            data = r.json()
+            if data.get("status") == "success" and data.get("data", {}).get("result"):
+                return True
+        return False
+    except Exception as exc:
+        logger.debug("Could not query Prometheus alerts (%s) — assuming no active alerts", exc)
+        return False
+
+
+async def _dispatch_predictive_alerts(all_signals: list) -> None:
+    """
+    After each analysis loop, check if any domain has anomalies meeting the
+    predictive alert criteria:
+      - abs(z_score) > _PREDICTIVE_Z_THRESHOLD
+      - confidence > _PREDICTIVE_CONFIDENCE_THRESHOLD
+      - computed risk_score > _PREDICTIVE_RISK_THRESHOLD
+      - no active Prometheus alert currently firing for that domain
+
+    If criteria are met, POST to the appropriate domain agent's
+    POST /predictive-alert endpoint and update the Prometheus counter.
+    """
+    if _http is None:
+        return
+
+    # Group strongest anomaly per domain
+    best_by_domain: dict[str, Any] = {}
+    for sig in all_signals:
+        domain = "compute" if sig.metric_name in {
+            "error_rate_pct", "latency_p99_ms", "rps", "cpu_usage_pct", "memory_usage_pct"
+        } else "storage"
+        if abs(sig.z_score) < _PREDICTIVE_Z_THRESHOLD:
+            continue
+        if sig.confidence < _PREDICTIVE_CONFIDENCE_THRESHOLD:
+            continue
+        existing = best_by_domain.get(domain)
+        if existing is None or abs(sig.z_score) > abs(existing.z_score):
+            best_by_domain[domain] = sig
+
+    for domain, sig in best_by_domain.items():
+        # Risk score: normalised z-score * confidence, capped at 1.0
+        risk_score = min(1.0, (abs(sig.z_score) / 5.0) * sig.confidence)
+        if risk_score < _PREDICTIVE_RISK_THRESHOLD:
+            continue
+
+        # Check no Prometheus alert is already firing for this domain
+        if await _has_active_prometheus_alerts(domain):
+            logger.debug(
+                "Skipping predictive alert for %s — Prometheus alert already firing", domain
+            )
+            continue
+
+        # Find forecast context
+        forecast_minutes = 0
+        for fc in current_intelligence.get("forecasts", []):
+            if fc.get("predicted_breach") and fc.get("metric_name", "").startswith(
+                "storage" if domain == "storage" else "http"
+            ):
+                breach_dt = datetime.fromisoformat(fc["predicted_breach"].replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                if breach_dt > now_dt:
+                    forecast_minutes = int((breach_dt - now_dt).total_seconds() / 60)
+                    break
+
+        agent_url = _COMPUTE_AGENT_URL if domain == "compute" else _STORAGE_AGENT_URL
+        payload = {
+            "service_name": sig.service_name if hasattr(sig, "service_name") else "unknown",
+            "domain": domain,
+            "scenario_id": f"anomaly_{sig.metric_name}",
+            "risk_score": round(risk_score, 3),
+            "confidence": round(sig.confidence, 3),
+            "description": (
+                f"Metric `{sig.metric_name}` is anomalous: "
+                f"current={sig.current_value:.3f}, "
+                f"baseline={sig.baseline_mean:.3f}, "
+                f"z_score={sig.z_score:.2f}."
+            ),
+            "forecast_breach_minutes": forecast_minutes,
+            "anomaly_metric": sig.metric_name,
+            "anomaly_z_score": round(sig.z_score, 3),
+        }
+
+        try:
+            resp = await _http.post(
+                f"{agent_url}/predictive-alert",
+                json=payload,
+                timeout=10.0,
+            )
+            if resp.status_code < 300:
+                obs_intelligence_predictive_alerts_sent_total.labels(domain=domain).inc()
+                logger.info(
+                    "Predictive alert dispatched  domain=%s  metric=%s  risk=%.2f  agent=%s",
+                    domain, sig.metric_name, risk_score, agent_url,
+                )
+            else:
+                logger.warning(
+                    "Predictive alert rejected by %s  status=%d  body=%s",
+                    agent_url, resp.status_code, resp.text[:200],
+                )
+        except Exception as exc:
+            logger.warning(
+                "Failed to dispatch predictive alert to %s: %s", agent_url, exc
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

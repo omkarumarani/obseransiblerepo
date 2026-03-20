@@ -401,6 +401,104 @@ async def ensure_aiops_workflow(xyops_post: _PostFn, xyops_get: Callable) -> Non
             action, _WORKFLOW_TITLE,
         )
 
+    await _ensure_predictive_alert_workflow_compute(xyops_post, xyops_get)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2b. Compute Predictive Alert Workflow
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_PRED_COMPUTE_EVENT_ID = "compute_predictive_alert_wf"
+_PRED_COMPUTE_TITLE = "Compute Predictive Alert Workflow"
+
+_DEMO_PREDICTIVE_COMPUTE_BODY = (
+    '{"service_name":"frontend-api",'
+    '"domain":"compute",'
+    '"scenario_id":"anomaly_error_rate_pct",'
+    '"risk_score":0.80,'
+    '"confidence":0.75,'
+    '"description":"Error rate is trending anomalously upward before threshold breach.",'
+    '"forecast_breach_minutes":30,'
+    '"anomaly_metric":"error_rate_pct",'
+    '"anomaly_z_score":3.1}'
+)
+
+_PRED_COMPUTE_NODES: list[dict[str, Any]] = [
+    {
+        "id": "pred_c_trigger",
+        "type": "trigger",
+        "x": 80,
+        "y": 340,
+    },
+    {
+        "id": "pred_c_n1",
+        "type": "job",
+        "x": 340,
+        "y": 260,
+        "data": {
+            "label": "Send Predictive Alert",
+            "plugin": "httpplug",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
+            "category": "general",
+            "icon": "bell",
+            "params": {
+                "method": "POST",
+                "url": f"{_BRIDGE}/predictive-alert",
+                "headers": _CT_JSON,
+                "data": _DEMO_PREDICTIVE_COMPUTE_BODY,
+                "success_match": '"status"',
+                "timeout": "30",
+            },
+        },
+    },
+]
+
+_PRED_COMPUTE_CONNECTIONS: list[dict[str, Any]] = [
+    {"id": "pred_c_c0", "source": "pred_c_trigger", "dest": "pred_c_n1"},
+]
+
+
+async def _ensure_predictive_alert_workflow_compute(
+    xyops_post: _PostFn, xyops_get: Callable
+) -> None:
+    """Provision the Compute Predictive Alert Workflow in xyOps (idempotent)."""
+    existing = await xyops_get(f"/api/app/get_event/v1?id={_PRED_COMPUTE_EVENT_ID}")
+    event_exists = bool(existing.get("event"))
+    payload: dict[str, Any] = {
+        "id": _PRED_COMPUTE_EVENT_ID,
+        "title": _PRED_COMPUTE_TITLE,
+        "type": "workflow",
+        "category": "general",
+        "enabled": True,
+        "notes": (
+            "Demonstrates the Compute Agent receiving a predictive alert from "
+            "obs-intelligence before a Prometheus alert fires. Creates a "
+            "[PREDICTIVE] approval-gated xyOps ticket."
+        ),
+        "triggers": [{"id": "pred_c_trigger", "type": "manual", "enabled": True}],
+        "workflow": {
+            "start": "pred_c_trigger",
+            "nodes": _PRED_COMPUTE_NODES,
+            "connections": _PRED_COMPUTE_CONNECTIONS,
+        },
+    }
+    api_path = "/api/app/update_event/v1" if event_exists else "/api/app/create_event/v1"
+    result = await xyops_post(api_path, payload)
+    action = "Updated" if event_exists else "Created"
+    if result.get("error") or result.get("code", 0) != 0:
+        logger.warning(
+            "Failed to %s Compute Predictive Alert workflow: %s",
+            action.lower(),
+            result.get("description") or result.get("error"),
+        )
+    else:
+        logger.info(
+            "%s Compute Predictive Alert workflow: "
+            "Scheduler → Workflows → '%s'",
+            action, _PRED_COMPUTE_TITLE,
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. Approval ticket action events (Approve / Decline buttons)

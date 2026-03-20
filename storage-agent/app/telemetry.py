@@ -78,6 +78,10 @@ storage_agent_webhook_received_total = Counter(
     "Total Alertmanager webhooks received",
     ["group_status"],  # firing | resolved
 )
+storage_agent_predictive_incidents_total = Counter(
+    "storage_agent_predictive_incidents_total",
+    "Total predictive incident tickets created by the storage agent (pre-alert, approval-gated)",
+)
 storage_agent_alert_processing_seconds = Histogram(
     "storage_agent_alert_processing_seconds",
     "Time to process a single storage alert end-to-end",

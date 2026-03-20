@@ -283,6 +283,60 @@ groups:
           dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
           runbook_url: "http://xyops:5522"
 
+  # ────────────────────────────────────────────────────────────
+  # Intelligence Signals (informational — for dashboard only)
+  # Based on obs_intelligence_* metrics from obs-intelligence:9100.
+  # These fire when the intelligence engine detects high risk WITHOUT
+  # a corresponding Prometheus alert — i.e., pre-alert / predictive state.
+  # They do NOT route to agents (alertmanager inhibits them when a real
+  # alert fires for the same domain).
+  # ────────────────────────────────────────────────────────────
+  - name: intelligence_signals
+    interval: 30s
+    rules:
+
+      # Informational: risk score is elevated but no Prometheus alert is firing.
+      # The obs-intelligence background loop will have already sent a predictive
+      # alert to the domain agent.  This rule makes the signal visible in
+      # Prometheus / Alertmanager UI and Grafana for post-incident analysis.
+      - alert: NoAlertFiringButHighRisk
+        expr: |
+          obs_intelligence_risk_score > 0.75
+          unless on()
+          (count(ALERTS{alertstate="firing"}) > 0)
+        for: 5m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "High intelligence risk score with no active alert ({{ $labels.domain }})"
+          description: >-
+            obs_intelligence_risk_score is above 0.75 for > 5 minutes
+            but no Prometheus alert is currently firing for domain={{ $labels.domain }}.
+            A predictive alert has been sent to the domain agent.
+            Check the xyOps approval queue for a [PREDICTIVE] ticket.
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
+      # Informational: an anomaly Z-score exceeds 3.0 — statistically unusual
+      - alert: HighAnomalyZScore
+        expr: |
+          abs(obs_intelligence_anomaly_z_score) > 3.0
+        for: 3m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "High anomaly Z-score detected ({{ $labels.metric_name }}, domain={{ $labels.domain }})"
+          description: >-
+            Metric {{ $labels.metric_name }} has a Z-score of {{ $value | humanize }}
+            (threshold ±3.0), indicating statistically unusual behaviour in the
+            {{ $labels.domain }} domain.
+          dashboard_url: "http://grafana:3000/d/obs-intelligence-detail"
+          runbook_url: "http://xyops:5522"
+          dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
+          runbook_url: "http://xyops:5522"
+
       # Cluster health degraded (health score < 2 = not OK)
       - alert: CephClusterDegraded
         expr: storage_cluster_health_score < 2

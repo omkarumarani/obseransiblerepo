@@ -24,6 +24,10 @@ _WORKFLOW_TARGET: str = os.getenv("XYOPS_SERVER_HOSTNAME", "xyops")
 _WORKFLOW_EVENT_ID = "storage_aiops_pipeline_wf"
 _WORKFLOW_TITLE = "Storage AIOps Agent Pipeline"
 
+# ── Predictive Alert Workflow ─────────────────────────────────────────────────
+_PRED_WORKFLOW_EVENT_ID = "storage_predictive_alert_wf"
+_PRED_WORKFLOW_TITLE = "Storage Predictive Alert Workflow"
+
 _STORAGE_AGENT = "http://storage-agent:9001"
 _CT_JSON = "Content-Type: application/json"
 
@@ -227,6 +231,125 @@ async def ensure_storage_workflow(xyops_post: _PostFn, xyops_get: Callable) -> N
             "connections": _CONNECTIONS,
         },
     }
+
+    api_path = "/api/app/update_event/v1" if event_exists else "/api/app/create_event/v1"
+    result = await xyops_post(api_path, payload)
+    action = "Updated" if event_exists else "Created"
+
+    if result.get("error") or result.get("code", 0) != 0:
+        logger.warning(
+            "Failed to %s Storage AIOps Pipeline workflow: %s",
+            action.lower(),
+            result.get("description") or result.get("error"),
+        )
+    else:
+        logger.info(
+            "%s Storage AIOps Pipeline workflow in xyOps: "
+            "Scheduler → Workflows → '%s'",
+            action,
+            _WORKFLOW_TITLE,
+        )
+
+    # Also provision the Predictive Alert Workflow
+    await _ensure_predictive_alert_workflow(xyops_post, xyops_get)
+
+
+# ── Predictive Alert Workflow nodes ──────────────────────────────────────────
+_DEMO_PREDICTIVE_BODY = (
+    '{"service_name":"storage-simulator",'
+    '"domain":"storage",'
+    '"scenario_id":"pool_fill_forecast_breach",'
+    '"risk_score":0.82,'
+    '"confidence":0.78,'
+    '"description":"Pool utilisation trending toward 95% critical threshold.",'
+    '"forecast_breach_minutes":45,'
+    '"anomaly_metric":"storage_pool_used_bytes",'
+    '"anomaly_z_score":2.9}'
+)
+
+_PRED_NODES: list[dict[str, Any]] = [
+    {
+        "id": "pred_trigger",
+        "type": "trigger",
+        "x": 80,
+        "y": 340,
+    },
+    {
+        "id": "pred_n1",
+        "type": "job",
+        "x": 340,
+        "y": 260,
+        "data": {
+            "label": "Send Predictive Alert",
+            "plugin": "httpplug",
+            "targets": [_WORKFLOW_TARGET],
+            "algo": "first",
+            "category": "general",
+            "icon": "bell",
+            "params": {
+                "method": "POST",
+                "url": f"{_STORAGE_AGENT}/predictive-alert",
+                "headers": _CT_JSON,
+                "data": _DEMO_PREDICTIVE_BODY,
+                "success_match": '"status"',
+                "timeout": "30",
+            },
+        },
+    },
+]
+
+_PRED_CONNECTIONS: list[dict[str, Any]] = [
+    {"id": "pred_c0", "source": "pred_trigger", "dest": "pred_n1"},
+]
+
+
+async def _ensure_predictive_alert_workflow(xyops_post: _PostFn, xyops_get: Callable) -> None:
+    """Provision the Storage Predictive Alert Workflow in xyOps (idempotent)."""
+    existing = await xyops_get(f"/api/app/get_event/v1?id={_PRED_WORKFLOW_EVENT_ID}")
+    event_exists = bool(existing.get("event"))
+
+    payload: dict[str, Any] = {
+        "id": _PRED_WORKFLOW_EVENT_ID,
+        "title": _PRED_WORKFLOW_TITLE,
+        "type": "workflow",
+        "category": "general",
+        "enabled": True,
+        "notes": (
+            "Demonstrates the Storage Agent receiving a predictive alert from "
+            "the Obs-Intelligence Engine — *before* a Prometheus alert fires.\n\n"
+            "The workflow POSTs a high-risk scenario payload to "
+            "storage-agent:9001/predictive-alert which creates a [PREDICTIVE] "
+            "approval-gated xyOps ticket.\n\n"
+            "In production this is triggered automatically by obs-intelligence "
+            "when risk_score > 0.75 AND confidence > 0.7 AND no alert is firing."
+        ),
+        "triggers": [
+            {"id": "pred_trigger", "type": "manual", "enabled": True}
+        ],
+        "workflow": {
+            "start": "pred_trigger",
+            "nodes": _PRED_NODES,
+            "connections": _PRED_CONNECTIONS,
+        },
+    }
+
+    api_path = "/api/app/update_event/v1" if event_exists else "/api/app/create_event/v1"
+    result = await xyops_post(api_path, payload)
+    action = "Updated" if event_exists else "Created"
+
+    if result.get("error") or result.get("code", 0) != 0:
+        logger.warning(
+            "Failed to %s Predictive Alert workflow: %s",
+            action.lower(),
+            result.get("description") or result.get("error"),
+        )
+    else:
+        logger.info(
+            "%s Predictive Alert workflow in xyOps: "
+            "Scheduler → Workflows → '%s'",
+            action,
+            _PRED_WORKFLOW_TITLE,
+        )
 
     api_path = "/api/app/update_event/v1" if event_exists else "/api/app/create_event/v1"
     result = await xyops_post(api_path, payload)

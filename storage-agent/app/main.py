@@ -242,6 +242,98 @@ async def list_pending_approvals() -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Predictive alert endpoint  (called by obs-intelligence background loop)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PredictiveAlertPayload(BaseModel):
+    service_name: str
+    domain: str = "storage"
+    scenario_id: str
+    risk_score: float
+    confidence: float
+    description: str = ""
+    forecast_breach_minutes: int = 0
+    anomaly_metric: str = ""
+    anomaly_z_score: float = 0.0
+
+
+@app.post("/predictive-alert", status_code=status.HTTP_202_ACCEPTED)
+async def predictive_alert(payload: PredictiveAlertPayload) -> dict:
+    """
+    Receive a pre-alert signal from obs-intelligence and create a [PREDICTIVE]
+    approval-gated xyOps ticket before a real Prometheus alert fires.
+
+    Always approval-gated regardless of STORAGE_REQUIRE_APPROVAL setting.
+    """
+    from .telemetry import storage_agent_predictive_incidents_total
+
+    logger.info(
+        "Predictive alert received  service=%s  scenario=%s  risk=%.2f  confidence=%.2f",
+        payload.service_name, payload.scenario_id, payload.risk_score, payload.confidence,
+    )
+
+    forecast_note = (
+        f" Forecast breach in **{payload.forecast_breach_minutes} min**."
+        if payload.forecast_breach_minutes > 0 else ""
+    )
+    anomaly_note = (
+        f" Anomaly Z-score on `{payload.anomaly_metric}`: **{payload.anomaly_z_score:.2f}**."
+        if payload.anomaly_metric else ""
+    )
+
+    body = (
+        f"## [PREDICTIVE] Pre-Alert Intelligence — Storage Agent\n\n"
+        f"> This ticket was raised by the Obs-Intelligence Engine **before** a "
+        f"Prometheus alert fired. A human must approve any action.\n\n"
+        f"| Field | Value |\n|---|---|\n"
+        f"| **Service** | `{payload.service_name}` |\n"
+        f"| **Scenario** | `{payload.scenario_id}` |\n"
+        f"| **Risk Score** | `{payload.risk_score:.2f}` |\n"
+        f"| **Confidence** | `{payload.confidence:.2f}` |\n"
+        f"| **Dashboard** | [Agentic AI Overview](http://grafana:3000/d/agentic-ai-overview) |\n\n"
+        f"### Intelligence Signals\n\n"
+        f"{payload.description}{forecast_note}{anomaly_note}\n\n"
+        f"### Recommended Action\n\n"
+        f"Review scenario `{payload.scenario_id}` playbook. "
+        f"**Approval required before any remediation executes.**"
+    )
+
+    create_payload = {
+        "subject": (
+            f"[PREDICTIVE] {payload.scenario_id} risk on {payload.service_name} "
+            f"[risk={payload.risk_score:.2f} confidence={payload.confidence:.2f}]"
+        ),
+        "body": body,
+        "type": "issue",
+        "status": "open",
+    }
+
+    if not _http:
+        return {"status": "error", "detail": "http client not ready"}
+
+    result = await _xyops_post("/api/app/create_ticket/v1", create_payload)
+    ticket_id = result.get("ticket", {}).get("id", "")
+    ticket_num = result.get("ticket", {}).get("num", 0)
+
+    if not result.get("error"):
+        storage_agent_predictive_incidents_total.inc()
+        logger.info(
+            "Predictive ticket created #%s (%s)  service=%s  scenario=%s",
+            ticket_num, ticket_id, payload.service_name, payload.scenario_id,
+        )
+    else:
+        logger.warning("Failed to create predictive ticket: %s", result.get("error"))
+
+    return {
+        "status": "accepted",
+        "ticket_id": ticket_id,
+        "ticket_num": ticket_num,
+        "service_name": payload.service_name,
+        "scenario_id": payload.scenario_id,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Alertmanager webhook receiver
 # ═══════════════════════════════════════════════════════════════════════════════
 

@@ -85,6 +85,10 @@ compute_agent_ai_analysis_total = PromCounter(
     "Total AI analyses attempted by the compute agent",
     ["status"],  # success | failed | skipped
 )
+compute_agent_predictive_incidents_total = PromCounter(
+    "compute_agent_predictive_incidents_total",
+    "Total predictive incident tickets created by the compute agent (pre-alert, approval-gated)",
+)
 compute_agent_webhook_received_total = PromCounter(
     "compute_agent_webhook_received_total",
     "Total Alertmanager webhooks received by compute agent",
