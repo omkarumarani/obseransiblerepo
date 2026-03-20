@@ -2,6 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Ensure the obs_intelligence package is importable as a top-level module
+ENV PYTHONPATH=/app/app
+
 # Install dependencies first (layer-cached unless requirements change)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

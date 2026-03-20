@@ -37,7 +37,6 @@ _http: httpx.AsyncClient | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http
-    bootstrap(app)
     _http = httpx.AsyncClient()
     start_scheduler(_http)
     logger.info("Obs-intelligence engine started (port 9100)")
@@ -54,6 +53,9 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
+
+# Bootstrap OTel instrumentation at module load time (must run before first request)
+bootstrap(app)
 
 
 @app.get("/health")
