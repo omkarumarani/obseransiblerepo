@@ -72,7 +72,12 @@ class ObsFeatures:
     recent_error_count: int = 0         # ERROR lines in last 5 min
     recent_warning_count: int = 0       # WARN  lines in last 5 min
     log_anomaly_detected: bool = False  # heuristic spike in error log rate
-
+    # ── Recurrence tracking ─────────────────────────────────────────────
+    recurrence_count: int = 0
+    # Number of times the same alert_name has fired in the last 6 hours.
+    # Populated by the background loop alert-recurrence tracker before
+    # features are passed to scenario correlation.  Drives the
+    # recurring_failure_signature scenario (human_only autonomy when >= 3).
     # ── Raw alert metadata ────────────────────────────────────────────────────
     labels: dict = field(default_factory=dict)
     annotations: dict = field(default_factory=dict)

@@ -107,6 +107,7 @@ init_pipeline(app)
 XYOPS_URL: str = os.getenv("XYOPS_URL", "http://xyops:5522")
 XYOPS_API_KEY: str = os.getenv("XYOPS_API_KEY", "")
 BRIDGE_INTERNAL_URL: str = os.getenv("BRIDGE_INTERNAL_URL", "http://storage-agent:9001")
+OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
 
 # ── Shared HTTP client ─────────────────────────────────────────────────────────
 _http: httpx.AsyncClient | None = None
@@ -372,8 +373,34 @@ async def alertmanager_webhook(request: Request) -> dict:
             )
         else:
             logger.info("Storage alert resolved: %s / %s", alert_name, service_name)
+            # Record the outcome in obs-intelligence for the SRE Incident Timeline.
+            asyncio.create_task(
+                _record_obs_intelligence_outcome(alert_name, service_name, "resolved")
+            )
 
     return {"status": "ok", "received": len(alerts)}
+
+
+async def _record_obs_intelligence_outcome(
+    scenario_id: str,
+    service_name: str,
+    outcome: str,
+) -> None:
+    """Fire-and-forget: notify obs-intelligence of an alert resolution outcome."""
+    try:
+        async with httpx.AsyncClient() as http:
+            await http.post(
+                f"{OBS_INTELLIGENCE_URL}/intelligence/record-outcome",
+                json={
+                    "scenario_id": scenario_id,
+                    "outcome": outcome,
+                    "service_name": service_name,
+                    "domain": "storage",
+                },
+                timeout=5.0,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not record outcome in obs-intelligence: %s", exc)
 
 
 async def _run_storage_pipeline(

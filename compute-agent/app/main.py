@@ -129,6 +129,7 @@ XYOPS_API_KEY: str = os.getenv("XYOPS_API_KEY", "")
 REQUIRE_APPROVAL: bool = os.getenv("REQUIRE_APPROVAL", "true").lower() != "false"
 # Only send to approval gate if severity >= this value
 APPROVAL_SEVERITY_THRESHOLD: set[str] = {"warning", "critical"}
+OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -893,5 +894,22 @@ async def _resolve_xyops_tickets(
             alert_name,
             service_name,
         )
+
+    # Record scenario outcome in obs-intelligence so the metric is visible
+    # on the SRE Incident Timeline dashboard.
+    try:
+        if _http:
+            await _http.post(
+                f"{OBS_INTELLIGENCE_URL}/intelligence/record-outcome",
+                json={
+                    "scenario_id": alert_name,
+                    "outcome": "resolved",
+                    "service_name": service_name,
+                    "domain": "compute",
+                },
+                timeout=5.0,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not record outcome in obs-intelligence: %s", exc)
 
     return {"resolved_ids": resolved_ids, "searched_alert": alert_name}

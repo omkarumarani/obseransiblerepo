@@ -48,11 +48,18 @@ obs_intelligence_forecast_breach_minutes = PromGauge(
     ["metric_name"],
 )
 
-# ── Predictive alert metrics ─────────────────────────────────────────────────
+# ── Predictive alert metrics ──────────────────────────────────────────────
 obs_intelligence_predictive_alerts_sent_total = PromCounter(
     "obs_intelligence_predictive_alerts_sent_total",
     "Total predictive alerts sent to domain agents (high risk, no active Prometheus alert)",
     ["domain"],
+)
+
+# ── Scenario outcome metrics ───────────────────────────────────────────────
+obs_intelligence_scenario_outcome_total = PromCounter(
+    "obs_intelligence_scenario_outcome_total",
+    "Scenario outcomes recorded after alert resolution or disposition",
+    ["scenario_id", "outcome"],  # outcome: resolved | escalated | declined | timedout
 )
 
 # ── Background loop performance ───────────────────────────────────────────────

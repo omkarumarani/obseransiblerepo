@@ -40,17 +40,22 @@ import httpx
 
 from obs_intelligence.models import EvidenceReport, RiskAssessment, Recommendation
 from obs_intelligence.evidence_builder import evidence_lines
+from obs_intelligence.sre_reasoning_agent import SREAssessment, SREReasoningAgent
 
 logger = logging.getLogger("obs_intelligence.llm_enricher")
 
 # ── Provider config ───────────────────────────────────────────────────────────
+# Both providers can be enabled simultaneously; OpenAI is tried first and
+# Claude is used as automatic fallback if OpenAI fails or is unavailable.
 _OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 _CLAUDE_API_KEY: str = os.getenv("CLAUDE_API_KEY", "")
 _USE_OPENAI: bool = bool(_OPENAI_API_KEY)
-_USE_CLAUDE: bool = bool(_CLAUDE_API_KEY) and not _USE_OPENAI
-_DEFAULT_MODEL = "gpt-4o-mini" if _USE_OPENAI else "claude-3-5-haiku-20241022"
-AI_MODEL: str = os.getenv("AI_MODEL") or os.getenv("CLAUDE_MODEL") or _DEFAULT_MODEL
+_USE_CLAUDE: bool = bool(_CLAUDE_API_KEY)   # independent of OpenAI — used as fallback
 AI_ENABLED: bool = _USE_OPENAI or _USE_CLAUDE
+
+# Per-provider model names — override via env if needed
+_OPENAI_MODEL: str = os.getenv("OPENAI_MODEL") or os.getenv("AI_MODEL") or "gpt-4o-mini"
+_CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL") or os.getenv("AI_MODEL") or "claude-3-5-haiku-20241022"
 
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 _CLAUDE_URL = "https://api.anthropic.com/v1/messages"
@@ -59,10 +64,13 @@ _CLAUDE_HEADERS = {
     "anthropic-version": "2023-06-01",
 }
 
+_providers_active = (
+    (["openai"] if _USE_OPENAI else [])
+    + (["claude (fallback)" if _USE_OPENAI else "claude"] if _USE_CLAUDE else [])
+)
 logger.info(
-    "llm_enricher provider: %s  model: %s",
-    "openai" if _USE_OPENAI else ("claude" if _USE_CLAUDE else "disabled"),
-    AI_MODEL if AI_ENABLED else "n/a",
+    "llm_enricher providers: %s",
+    ", ".join(_providers_active) if _providers_active else "disabled",
 )
 
 
@@ -141,6 +149,7 @@ async def enrich(
     recommendation: Recommendation,
     risk: RiskAssessment,
     http: httpx.AsyncClient,
+    sre_assessment: SREAssessment | None = None,
 ) -> LLMEnrichment | None:
     """
     Call the LLM to produce a rich incident narrative from the evidence bundle.
@@ -153,29 +162,59 @@ async def enrich(
       - A GitHub PR description
       - Rollback steps
 
-    Returns None when AI is disabled (caller uses deterministic output instead).
-    Returns LLMEnrichment on success.
-    Logs warnings and returns None on LLM API failure (graceful degradation).
+    The sre_assessment argument (optional) contains pre-computed structured
+    SRE reasoning that is injected into the prompt as verified facts.  If not
+    provided it is computed automatically from the evidence before the LLM call.
+    The LLM writes narrative FROM this structure — it does not re-derive it.
+
+    Provider failover: tries OpenAI first; if OpenAI is unavailable or returns
+    an error, retries with Claude (if CLAUDE_API_KEY is set).
+
+    Returns None when AI is disabled or all providers fail.
     """
     if not AI_ENABLED:
         logger.debug("AI disabled — skipping LLM enrichment")
         return None
 
-    prompt = _build_prompt(evidence, recommendation, risk)
+    # Run deterministic SRE reasoning first (fast, no network)
+    if sre_assessment is None:
+        sre_assessment = SREReasoningAgent().assess(
+            evidence.features,
+            evidence.scenario_matches,
+            risk,
+        )
 
-    try:
-        if _USE_OPENAI:
+    prompt = _build_prompt(evidence, recommendation, risk, sre_assessment)
+
+    # ── Provider failover: OpenAI → Claude → deterministic fallback ───────────
+    raw: dict | None = None
+    provider_used: str | None = None
+
+    if _USE_OPENAI:
+        try:
             raw = await _call_openai(prompt, http)
-        else:
+            if raw:
+                provider_used = "openai"
+        except Exception as exc:
+            logger.warning(
+                "OpenAI enrichment failed — trying Claude fallback: %s", exc
+            )
+
+    if raw is None and _USE_CLAUDE:
+        try:
             raw = await _call_claude(prompt, http)
-    except Exception as exc:
-        logger.warning("LLM enrichment API call failed: %s", exc)
-        return None
+            if raw:
+                provider_used = "claude"
+        except Exception as exc:
+            logger.warning(
+                "Claude enrichment also failed — returning deterministic result: %s",
+                exc,
+            )
 
     if not raw:
         return None
 
-    return _parse_enrichment(raw, recommendation)
+    return _parse_enrichment(raw, recommendation, provider_used or "unknown")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,9 +225,15 @@ def _build_prompt(
     evidence: EvidenceReport,
     recommendation: Recommendation,
     risk: RiskAssessment,
+    sre_assessment: SREAssessment | None = None,
 ) -> str:
     """
-    Build the LLM user prompt from the EvidenceReport and top Recommendation.
+    Build the LLM user prompt from the EvidenceReport, top Recommendation,
+    and (optionally) a pre-computed SREAssessment.
+
+    When sre_assessment is provided, its structured reasoning block is injected
+    before the JSON schema instruction.  The LLM is instructed to write a
+    narrative FROM the pre-computed facts rather than re-deriving them.
     """
     f = evidence.features
     ev_lines = "\n".join(evidence_lines(evidence))
@@ -204,6 +249,12 @@ def _build_prompt(
 
     playbook_name = recommendation.ansible_playbook or "(none identified)"
     rollback_hint = recommendation.rollback_plan or "(none)"
+
+    sre_block = (
+        f"\n{sre_assessment.to_prompt_block()}\n"
+        if sre_assessment is not None
+        else ""
+    )
 
     return f"""Analyze this production incident and produce a structured JSON response.
 
@@ -232,10 +283,10 @@ Action type:   {recommendation.action_type}
 Display name:  {recommendation.display_name}
 Playbook:      {playbook_name}
 Rollback hint: {rollback_hint}
-
+{sre_block}
 Respond with ONLY valid JSON (no markdown fences) matching this schema:
 {{
-  "rca_summary": "2-3 sentence root cause analysis",
+  "rca_summary": "2-3 sentence root cause analysis written from the SRE Reasoning Layer facts above",
   "rca_detail": {{
     "symptoms": ["observed symptoms"],
     "probable_cause": "most likely root cause",
@@ -274,7 +325,7 @@ async def _call_openai(prompt: str, http: httpx.AsyncClient) -> dict | None:
             "Content-Type": "application/json",
         },
         json={
-            "model": AI_MODEL,
+            "model": _OPENAI_MODEL,
             "max_tokens": 2000,
             "response_format": {"type": "json_object"},
             "messages": [
@@ -296,7 +347,7 @@ async def _call_claude(prompt: str, http: httpx.AsyncClient) -> dict | None:
         _CLAUDE_URL,
         headers={**_CLAUDE_HEADERS, "x-api-key": _CLAUDE_API_KEY},
         json={
-            "model": AI_MODEL,
+            "model": _CLAUDE_MODEL,
             "max_tokens": 2000,
             "system": _SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": prompt}],
@@ -317,14 +368,19 @@ async def _call_claude(prompt: str, http: httpx.AsyncClient) -> dict | None:
 # Internal: response parser
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _parse_enrichment(raw: dict, recommendation: Recommendation) -> LLMEnrichment:
+def _parse_enrichment(
+    raw: dict,
+    recommendation: Recommendation,
+    provider: str = "unknown",
+) -> LLMEnrichment:
     """
     Parse the raw LLM JSON into a typed LLMEnrichment.
 
     Uses the Recommendation as a fallback for fields the LLM may have omitted.
+    The provider parameter records which API actually produced the response
+    (important for failover scenarios where the active provider differs from
+    _USE_OPENAI / _USE_CLAUDE flags).
     """
-    provider = "openai" if _USE_OPENAI else "claude"
-
     return LLMEnrichment(
         rca_summary         = raw.get("rca_summary", "No RCA generated."),
         recommended_action  = recommendation.action_type,

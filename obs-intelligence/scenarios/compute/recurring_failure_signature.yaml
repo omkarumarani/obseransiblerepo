@@ -13,8 +13,16 @@ alert_match_weight: 0.30
 confidence_threshold: 0.30
 
 action:       deep_dive_investigation
-autonomy:     approval_gated
+autonomy:     human_only   # Forced human review — recurring failures need SRE investigation
 irreversible: false
+
+# recurrence_policy: this scenario forces human_only autonomy when the same
+# alert has been seen 3+ times in the last 6 hours.  The SRE Reasoning Agent
+# populates ObsFeatures.recurrence_count before scenario correlation runs.
+# A count >= 3 satisfies the condition below and keeps autonomy at human_only.
+recurrence_policy:
+  min_occurrences: 3
+  window_hours:    6
 
 rca: >
   The service is exhibiting a recurring failure pattern with a periodic error
@@ -27,21 +35,21 @@ rca: >
 playbook_hint: >
   1. Correlate alert timestamps: grep alert history for recurrence interval
   2. List cron jobs: kubectl get cronjobs; check pod logs at failure times
-  3. Plot memory growth trend over 24 h in Grafana (look for sawtooth → GC leak pattern)
+  3. Plot memory growth trend over 24 h in Grafana (look for sawtooth -> GC leak pattern)
   4. Capture heap dump at the peak of the next cycle before the restart fires
   5. Add a synthetic load test reproducing the cron pattern to replicate in staging
 
 conditions:
+  - field:     recurrence_count
+    operator:  gte
+    threshold: 3
+    weight:    0.50   # primary signal: at least 3 occurrences in the last 6 h
+
   - field:     log_anomaly_detected
     operator:  "true"
-    weight:    0.40   # log anomaly is the strongest recurring-failure indicator
+    weight:    0.30   # log anomaly is the strongest recurring-failure indicator
 
   - field:     recent_error_count
     operator:  gte
     threshold: 5
-    weight:    0.30   # concrete error count distinguishes from warning noise
-
-  - field:     error_rate
-    operator:  gte
-    threshold: 0.02
-    weight:    0.30
+    weight:    0.20   # concrete error count distinguishes from warning noise

@@ -24,6 +24,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .background import current_intelligence, start_scheduler, stop_scheduler
 from .telemetry import bootstrap
+from obs_intelligence.metrics_publisher import obs_intelligence_scenario_outcome_total
 
 logger = logging.getLogger("obs-intelligence")
 
@@ -89,6 +90,40 @@ async def intelligence_current() -> dict:
         "analysis_loop_count": current_intelligence.get("analysis_loop_count", 0),
         "forecast_loop_count": current_intelligence.get("forecast_loop_count", 0),
     }
+
+
+@app.post("/intelligence/record-outcome")
+async def record_outcome(body: dict) -> dict:
+    """
+    Record a scenario outcome after an alert is resolved or disposition is made.
+
+    Called by domain agents when Alertmanager sends status=resolved,
+    or when a human approves/declines a remediation.
+
+    Body: {
+        "scenario_id": "recurring_failure_signature",
+        "outcome":     "resolved",   # resolved | escalated | declined | timedout
+        "service_name": "frontend-api",  # optional, for logging
+        "domain":       "compute"        # optional, for logging
+    }
+
+    Increments obs_intelligence_scenario_outcome_total{scenario_id, outcome}.
+    """
+    scenario_id = str(body.get("scenario_id", "unknown"))
+    outcome     = str(body.get("outcome", "resolved"))
+    service     = str(body.get("service_name", ""))
+    domain      = str(body.get("domain", ""))
+
+    obs_intelligence_scenario_outcome_total.labels(
+        scenario_id=scenario_id,
+        outcome=outcome,
+    ).inc()
+
+    logger.info(
+        "Scenario outcome recorded  scenario=%s  outcome=%s  service=%s  domain=%s",
+        scenario_id, outcome, service, domain,
+    )
+    return {"status": "ok", "scenario_id": scenario_id, "outcome": outcome}
 
 
 @app.post("/analyze")
