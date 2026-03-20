@@ -39,16 +39,19 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
                                     ▼
                         Obs-Intelligence Engine
                               (port 9100)
-                    ┌──────────────────────────────┐
-                    │  Scenario Correlator          │
-                    │  Feature Extractor            │
-                    │  Risk Scorer                  │
-                    │  Anomaly Detector (Z-score)   │
-                    │  Forecaster (numpy linreg)    │
-                    │  Recommender                  │
-                    │  Evidence Builder             │
-                    │  LLM Enricher (GPT-4o/Claude) │
-                    └──────────────────────────────┘
+                    ┌──────────────────────────────────┐
+                    │  Scenario Correlator              │
+                    │  Feature Extractor                │
+                    │  Risk Scorer                      │
+                    │  Anomaly Detector (Z-score)       │
+                    │  Forecaster (numpy linreg)        │
+                    │  Recommender                      │
+                    │  Evidence Builder                 │
+                    │  SRE Reasoning Agent (det.)       │
+                    │  LLM Enricher (OpenAI → Claude)   │
+                    │  Background: predictive dispatch  │
+                    │  POST /intelligence/record-outcome│
+                    └──────────────────────────────────┘
                                     │
                                     ▼
                                xyOps (5522)
@@ -84,7 +87,7 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 | **alertmanager** | 9093 | Alert grouping/dedup + webhook routing |
 | **compute-agent** | 9000 | Compute AIOps agent — `POST /webhook`, `GET /health`, `GET /metrics` |
 | **storage-agent** | 9001 | Storage AIOps agent — `POST /webhook`, `GET /health`, `GET /metrics` |
-| **obs-intelligence** | 9100 | Shared intelligence engine — `GET /intelligence/current`, `POST /analyze` |
+| **obs-intelligence** | 9100 | Shared intelligence engine — `GET /intelligence/current`, `POST /analyze`, `POST /intelligence/record-outcome` |
 | **storage-simulator** | 9200 | Ceph scenario emulator — `POST /scenario/{name}`, `GET /metrics` |
 | **xyops** | 5522, 5523 | AIOps platform — tickets, workflows, job scheduler |
 | **ansible-runner** | 8090 | Playbook executor — `POST /run` |
@@ -147,24 +150,56 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
   6. LLM enrichment
 - Enriched xyOps tickets now include: risk level badge, risk score, evidence observations, LLM root cause narrative
 
+### Phase 6 — Continuous Intelligence & Predictive Alerts
+- **Predictive alert dispatch** — obs-intelligence background loop now fires `POST /predictive-alert` on compute-agent and storage-agent when `risk_score > 0.75 AND confidence > 0.7` and **no active Prometheus alert exists** — catching degradation before it pages
+- **`POST /predictive-alert`** endpoint on both agents — creates `[PREDICTIVE]`-tagged xyOps tickets; always `approval_gated` (human must approve proactive remediations)
+- **`background.py`** fully realised — APScheduler drives two loops:
+  - Anomaly scan every 60 s (Z-score per metric/service)
+  - Forecast + predictive dispatch every 5 min
+- **New Prometheus alert rules** — `NoAlertFiringButHighRisk` and `HighAnomalyZScore` for surfacing intelligence-layer signals in the alerting pipeline
+- **Predictive Alert Workflow** provisioned in xyOps for both compute and storage domains — canvas nodes distinguish predictive from reactive alerts
+- **`agentic-ai-overview` Grafana dashboard** updated with "Active Intelligence Signals" row showing predictive alert rates and anomaly Z-scores
+- **Predictive alert counters** added to `telemetry.py` for all three services
+
+### Phase 7 — SRE Reasoning Layer
+- **`sre_reasoning_agent.py`** — fully deterministic (no LLM calls, unit-testable) `SREReasoningAgent` that produces a structured `SREAssessment`:
+  - `degradation_summary` — one-liner per domain derived from live signal values
+  - `causal_chain` — root cause chain built from top scenario match + `contributing_factors` + domain inferences
+  - `predicted_impact` — maps risk level → blast radius + time-to-impact
+  - `recommended_actions` — scenario playbook actions + domain-specific steps
+  - `autonomy_recommendation` — `human_only` / `approval_gated` / `autonomous`
+  - `urgency` — `critical` / `high` / `medium` / `low` from risk + time-to-impact
+  - `evidence_strength` — scored from scenario confidence + log anomaly + error metrics
+  - `to_prompt_block()` — serialises the assessment as a structured block injected into the LLM prompt
+- **LLM enricher redesigned** — LLM receives SREAssessment as structured context and **writes the narrative** around it; it no longer generates its own reasoning (narrative writer, not reasoner)
+- **OpenAI → Claude automatic failover** — `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are independent; if OpenAI call raises an exception, Claude is tried automatically; returns `None` and falls back to deterministic analysis only if both fail
+- **Outcome tracking**:
+  - `obs_intelligence_scenario_outcome_total{scenario_id, outcome}` Prometheus counter added to `metrics_publisher.py`
+  - `POST /intelligence/record-outcome` endpoint on obs-intelligence — agents call it on alert resolution/escalation
+  - Alert resolution hooks in both compute-agent and storage-agent automatically POST the outcome when a firing alert resolves
+- **`recurring_failure_signature` scenario** — upgraded to `human_only` autonomy; fires when `recurrence_count >= 3` within 6 h; `recurrence_count` field added to `ObsFeatures`
+- **Grafana "SRE Incident Timeline" dashboard** (`sre-incident-timeline.json`) — 4 rows, 12 panels: risk gauges, firing alerts, scenario outcomes barchart, HTTP error rate / latency timeseries, storage pool fill, risk score timeline, outcome rate, scenario confidence heatmap
+- **`CONTRIBUTING-SCENARIOS.md`** — full scenario YAML authoring guide covering all fields, available `ObsFeatures` fields, confidence scoring formula, autonomy selection guidance, and two worked examples
+- **`DEMO-RUNBOOK.md`** — step-by-step end-to-end rehearsal guide from `docker compose up` through chaos injection, predictive alert observation, approval workflows, Ansible execution, and outcome recording
+
 ---
 
 ## What Is Still To Add
 
 | Item | Description | Effort |
 |---|---|---|
-| **End-to-end Docker test** | `docker compose up --build` + curl all agent health endpoints + trigger a test alert + verify xyOps ticket with risk score | Low |
-| **Grafana dashboard validation** | Verify `obs_intelligence_scenario_match_confidence` timeseries populates in `obs-intelligence-detail` dashboard | Low |
-| **SRE Reasoning Agent (optional)** | LLM-powered hypothesis generation for unknown patterns with no scenario match; runs as sidecar, feeds back to ticket | High |
+| **End-to-end Docker test** | `docker compose up --build` + curl all agent health endpoints + trigger a test alert + verify xyOps ticket with risk score and SRE reasoning block | Low |
 | **oie_client.py in agents** | Replace direct obs_intelligence package import with HTTP client to `http://obs-intelligence:9100/analyze` for true service decoupling | Medium |
-| **Multi-agent correlation** | When compute and storage alerts fire simultaneously, detect cross-domain cascading failures | High |
+| **Multi-agent correlation** | When compute and storage alerts fire simultaneously, detect cross-domain cascading failures and produce a unified SREAssessment | High |
+| **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts without losing recurrence history | Medium |
 | **Notification integrations** | Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level | Medium |
 | **Ansible live mode** | Real Ansible playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
-| **Storage forecast dashboard** | Grafana panel: pool fill forecast + days-to-critical gauge, updated every 5 min | Low |
-| **Scenario schema validation** | JSON Schema validation of `obs-intelligence/scenarios/*.yaml` files on startup | Low |
-| **Auth / API key middleware** | Bearer token validation on agent webhook endpoints; currently open | Medium |
+| **Scenario schema validation** | JSON Schema / Pydantic validation of `obs-intelligence/scenarios/*.yaml` files at startup with clear schema errors | Low |
+| **Auth / API key middleware** | Bearer token validation on agent webhook endpoints and obs-intelligence `/analyze`; currently open | Medium |
 | **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
-| **Unit test suite (agents)** | Extend existing compute-agent test suite to cover risk_scorer, recommender, evidence_builder | Medium |
+| **Unit test suite (agents)** | Extend existing compute-agent test suite to cover risk_scorer, recommender, evidence_builder, and sre_reasoning_agent | Medium |
+| **SREAssessment feedback loop** | Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite) | High |
+| **Outcome dashboard drill-down** | Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log | Low |
 
 ---
 
@@ -313,8 +348,10 @@ Domain agents (on each alert):
 |---|---|---|---|
 | `XYOPS_URL` | compute-agent, storage-agent | `http://xyops:5522` | xyOps base URL |
 | `XYOPS_API_KEY` | compute-agent, storage-agent | _(set after first login)_ | xyOps REST API key |
-| `OPENAI_API_KEY` | compute-agent, storage-agent | _(optional)_ | GPT-4o enrichment |
-| `AI_MODEL` | compute-agent, storage-agent | `gpt-4o` | LLM model name |
+| `OPENAI_API_KEY` | obs-intelligence | _(optional)_ | OpenAI enrichment (tried first) |
+| `ANTHROPIC_API_KEY` | obs-intelligence | _(optional)_ | Anthropic Claude fallback (used if OpenAI fails) |
+| `OPENAI_MODEL` | obs-intelligence | `gpt-4o-mini` | OpenAI model override |
+| `CLAUDE_MODEL` | obs-intelligence | `claude-3-5-haiku-20241022` | Claude model override |
 | `PROMETHEUS_URL` | all agents | `http://prometheus:9090` | Prometheus query URL |
 | `LOKI_URL` | all agents | `http://loki:3100` | Loki query URL |
 | `OBS_INTELLIGENCE_URL` | compute-agent, storage-agent | `http://obs-intelligence:9100` | Intelligence engine URL |
