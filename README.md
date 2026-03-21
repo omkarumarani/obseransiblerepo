@@ -1,8 +1,8 @@
 # Observability Learning — Multi-Agent AIOps Platform
 
-A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a React Command Center UI.
+A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a **Streamlit Command Center** with live agent mesh topology.
 
-> **Latest:** v8.0.0 — Block F (Local LLM Validation + Knowledge Store) + AIOps Command Center UI.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
+> **Latest:** v10.0.0 — Streamlit Command Center (7-tab live dashboard, Agent Mesh visualisation) + qwen3.5 LLM upgrade.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
 
 ---
 
@@ -11,7 +11,20 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 - [Architecture Overview](#architecture-overview)
 - [Service Map & Ports](#service-map--ports)
 - [What Has Been Built](#what-has-been-built)
+  - [Phase 1 — Core Observability Stack](#phase-1--core-observability-stack)
+  - [Phase 2 — Alert Pipeline & AIOps Integration](#phase-2--alert-pipeline--aiops-integration)
+  - [Phase 3 — Domain Split & Storage Agent](#phase-3--domain-split--storage-agent)
+  - [Phase 4 — Shared Obs-Intelligence Engine](#phase-4--shared-obs-intelligence-engine-oie)
+  - [Phase 5 — Risk Scoring, Evidence Builder & LLM Enrichment](#phase-5--risk-scoring-evidence-builder--llm-enrichment)
+  - [Phase 6 — Continuous Intelligence & Predictive Alerts](#phase-6--continuous-intelligence--predictive-alerts)
+  - [Phase 7 — SRE Reasoning Layer](#phase-7--sre-reasoning-layer)
+  - [Phase 8 — Local LLM Validation & ChromaDB Knowledge Store](#phase-8--local-llm-validation--chromadb-knowledge-store-block-f)
+  - [Phase 9 — AIOps Command Center UI (React)](#phase-9--aiops-command-center-ui-react)
+  - [Phase 10 — Streamlit Command Center + Agent Mesh + qwen3.5](#phase-10--streamlit-command-center--agent-mesh--qwen35)
 - [What Is Still To Add](#what-is-still-to-add)
+  - [Phase 11 — Dashboard Enhancements](#phase-11--dashboard-enhancements)
+  - [Phase 12 — Intelligence & Autonomy](#phase-12--intelligence--autonomy)
+  - [Phase 13 — Integrations & Hardening](#phase-13--integrations--hardening)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Key Workflows](#key-workflows)
@@ -71,9 +84,18 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
                                     ▼
                              Gitea PR / Audit (3002)
 
-                    ─────── Command Center UI ────────
-                    Browser → aiops-ui :3005 (Nginx)
-                                    │
+                    ─────── Command Center (Streamlit) ──────────────
+                    Browser → streamlit-dashboard :3500
+                    ┌─────────────────────────────────────────────────┐
+                    │  📊 Overview       — health grid + activity feed │
+                    │  🔴 Live Pipeline  — 6-agent flow + AI analysis  │
+                    │  ⏳ Approvals      — pending PRs + approve/reject │
+                    │  ✅ Outcomes       — per-run E2E results          │
+                    │  📜 History        — filterable session table     │
+                    │  🤖 Autonomy       — trust tiers + decision dist  │
+                    │  🌐 Agent Mesh     — live vis.js topology graph   │
+                    └─────────────────┬───────────────────────────────┘
+                                      │
                               ui-backend :9005
                     ┌──────────────────────────────┐
                     │  BFF Aggregator (FastAPI)     │
@@ -106,14 +128,13 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 | **storage-agent** | 9001 | Storage AIOps agent — `POST /webhook`, `GET /health`, `GET /session/{id}` |
 | **obs-intelligence** | 9100 | Shared intelligence engine — `/analyze`, `/intelligence/current`, `/knowledge/*` |
 | **storage-simulator** | 9200 | Ceph scenario emulator — `POST /scenario/{name}`, `GET /metrics` |
-| **local-llm** | 11434 | Ollama — hosts `llama3.2:3b` (corroboration) + `nomic-embed-text` (embeddings) |
+| **local-llm** | 11434 | Ollama — hosts `qwen3.5` (corroboration) + `nomic-embed-text` (embeddings) |
 | **knowledge-store** | 8020 | ChromaDB vector store — incident embeddings for similarity retrieval |
 | **xyops** | 5522, 5523 | AIOps platform — tickets, workflows, job scheduler |
 | **ansible-runner** | 8090 | Playbook executor — `POST /run` |
 | **gitea** | 3002 | Self-hosted Git — Ansible PR audit trail |
 | **ui-backend** | 9005 | BFF aggregator — unified API for Command Center (`/pipeline/*`, `/scenarios`, `/autonomy`) |
-| **aiops-ui** | 3005 | Production Nginx serving the React Command Center (proxies `/api/*` → ui-backend) |
-| **command-center** | 3500 | Vite dev server for Command Center React app |
+| **streamlit-dashboard** | 3500 | Streamlit Command Center — 7-tab live dashboard (replaces React `aiops-ui` + `command-center`) |
 | **frontend-api** | 8080 | Demo app — emits OTel spans/metrics/logs |
 | **backend-api** | 8081 | Demo app — emits OTel spans/metrics/logs |
 | **loadgen** | — | Steady traffic generator (opt-in profile) |
@@ -215,7 +236,7 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 - **Unit tests** — `obs-intelligence/tests/test_local_llm_enricher.py` — 35 tests, 7 classes, fully offline (no Ollama/ChromaDB needed); 35/35 passing
 - **`local_validator.py` deleted** — orphaned predecessor removed
 
-### Phase 9 — AIOps Command Center UI
+### Phase 9 — AIOps Command Center UI (React)
 - **`command-center/`** — React + TypeScript SPA with React Flow pipeline graph, agent details drawer, incident dashboard, scenario explorer, trust-score tracker, and playback mode
 - **`ui-backend/`** — FastAPI BFF aggregator; consolidates compute-agent, storage-agent, obs-intelligence, Gitea, xyOps into a unified REST API
 - **`aiops-ui/`** — Production Nginx service serving the React build (port 3005); proxies `/api/*` to ui-backend
@@ -224,23 +245,79 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 - **`LEARNING-LAYER-ARCHITECTURE.md`** — deep-dive doc for the feedback/learning layer
 - **`SIMULATION-SCENARIO.md`** — end-to-end scenario trigger guide
 
+### Phase 10 — Streamlit Command Center + Agent Mesh + qwen3.5
+
+#### Streamlit Dashboard (`streamlit-dashboard/`)
+Replaced the React `command-center` + `aiops-ui` services with a single Python Streamlit app on **port 3500**.  Key improvements that the React app could not surface:
+- **26+ pending approvals** in Gitea were invisible in the React UI — now a dedicated ⏳ Approvals tab with one-click Approve/Reject buttons posted back to compute-agent
+- **Workflow outcomes** (`/autonomy/history`) were never called by React — now shown in a ✅ Outcomes tab with success/failure trend chart
+- **Full pipeline history** with per-session drill-down into AI analysis, risk score, evidence, LLM verdict
+- **Autonomy & Trust** tab showing per-service tier progress, decision distribution pie, and the path to the next tier
+
+**Seven tabs:**
+
+| Tab | Content |
+|---|---|
+| 📊 Overview | Service health grid, active sessions, alert counts, recent activity |
+| 🔴 Live Pipeline | Current session: 6 agent status cards, AI analysis narrative, risk gauge, LLM verdict |
+| ⏳ Pending Approvals | All approval-gated sessions with Approve / Reject actions, Gitea PR links |
+| ✅ Workflow Outcomes | Per-run E2E result table + success-rate trend chart + executor details |
+| 📜 Pipeline History | Filterable session table; click to expand full analysis per run |
+| 🤖 Autonomy & Trust | Per-service autonomy tier, trust progress bar, decision distribution chart |
+| 🌐 Agent Mesh | Live vis.js topology graph (see below) |
+
+#### Agent Mesh Visualisation (`🌐 Agent Mesh` tab)
+- **vis.js Network** graph (CDN, dark theme `#0a0e27`) embedded via `st.components.v1.html()`
+- **9 nodes**: AlertManager · Compute Agent · Prometheus · Loki · Obs-Intelligence · Local LLM (qwen3.5) · xyOps · Gitea · Ansible Runner
+- **Node colour** driven by current pipeline `stage` — orange glow = actively communicating, dark green = step done, dark = idle, red = unhealthy
+- **Animated edges** (dashed orange) light up only on the links active right now; edges to completed nodes turn green
+- **Stage-to-active-nodes map**: `logs` → {compute, loki} · `metrics` → {compute, prometheus} · `analyzed` → {compute, obs_intel, local_llm} · `awaiting_approval` → {compute, gitea} · `autonomous_executing` → {compute, ansible}
+- **Info bar** below graph: current stage badge, session ID, service name, alert name, severity, risk score, autonomy decision
+- **Narrative strip**: one-line plain-English sentence for each stage (e.g. `"🧠 Obs-Intelligence running AI analysis + Local LLM corroboration."`)
+- **Live Agent Activity Feed** below graph: per-agent status cards (left) + platform detail expanders (right) showing AI analysis text, Prometheus metric table, Loki log lines, Gitea PR status, trust metrics
+- **Pending approvals mini-feed** at bottom of tab
+
+#### Bug Fixes (Phase 10)
+- **`compute-agent` DB fallback** — `_require_session("default")` now queries SQLite when in-memory `_sessions` is empty (sessions were being GC'd after the 1-hour TTL, causing 404s on restart)
+- **`ui-backend` Pydantic stripping** — removed `response_model=PipelineState` from `GET /pipeline/session/{id}`; the Pydantic model was silently dropping `created_at`, `stage`, and other critical fields that caused the React app to crash with `new Date(undefined * 1000)`
+
+#### qwen3.5 LLM Upgrade
+- `LOCAL_LLM_MODEL` default changed from `llama3.2:3b` → **`qwen3.5`** across all services and agents
+- Updated in: `docker-compose.yml`, `compute-agent/app/ai_analyst.py`, `compute-agent/app/main.py`, `obs-intelligence/app/main.py`, `obs-intelligence/app/obs_intelligence/llm_enricher.py`, `obs-intelligence/app/obs_intelligence/local_llm_enricher.py`
+
 ---
 
 ## What Is Still To Add
 
+### Phase 11 — Dashboard Enhancements
+| Item | Description | Effort |
+|---|---|---|
+| **Streamlit Storage Agent tab** | Add a second Live Pipeline tab (or tab group) for the storage-agent pipeline, mirroring the compute-agent view | Medium |
+| **WebSocket / SSE real-time push** | Replace 5-second polling with a Server-Sent Events stream from compute-agent so the dashboard reacts instantly to stage changes | Medium |
+| **Agent Mesh — edge bandwidth labels** | Show estimated data size / latency on each active edge (e.g. `"12 log lines"`, `"3 metrics"`) | Low |
+| **Agent Mesh — click-to-drill** | Click a node in the vis.js graph → open the relevant service UI (Gitea, xyOps, Prometheus) in a new browser tab | Low |
+| **Streamlit multi-page** | Split the 7 tabs into Streamlit multi-page app (separate `.py` files per tab) to keep codebase maintainable as it grows | Medium |
+| **Dark/light theme toggle** | Allow users to switch between the dark Streamlit custom CSS and default light theme | Low |
+
+### Phase 12 — Intelligence & Autonomy
 | Item | Description | Effort |
 |---|---|---|
 | **Multi-agent correlation** | When compute and storage alerts fire simultaneously, detect cross-domain cascading failures and produce a unified SREAssessment | High |
-| **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts | Medium |
-| **Notification integrations** | Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level | Medium |
-| **Ansible live mode** | Real playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
-| **Auth / API key middleware** | Bearer token validation on agent webhook endpoints and obs-intelligence `/analyze`; currently open | Medium |
-| **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
 | **SREAssessment feedback loop** | Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite) | High |
-| **Outcome dashboard drill-down** | Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log | Low |
+| **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts | Medium |
+| **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
+| **ChromaDB cold-start seeding** | Pre-seed the knowledge store with synthetic past incidents so local validation works on day one | Medium |
+| **qwen3.5 fine-tuning** | Fine-tune a LoRA adapter on recorded incident outcomes to improve corroboration accuracy over time | High |
+
+### Phase 13 — Integrations & Hardening
+| Item | Description | Effort |
+|---|---|---|
+| **Notification integrations** | Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level | Medium |
+| **Auth / API key middleware** | Bearer token validation on agent webhook endpoints and obs-intelligence `/analyze`; currently open | Medium |
+| **Ansible live mode** | Real playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
 | **Ollama GPU acceleration** | Add `deploy.resources.reservations.devices` to `local-llm` service for CUDA/ROCm GPU inference | Low |
 | **ChromaDB auth** | Enable ChromaDB token authentication before exposing to untrusted networks | Low |
-| **ChromaDB cold-start seeding** | Pre-seed the knowledge store with synthetic past incidents so local validation works on day one | Medium |
+| **Outcome dashboard drill-down** | Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log | Low |
 
 ---
 
@@ -315,9 +392,8 @@ curl http://localhost:9001/health      # storage-agent
 curl http://localhost:9100/health      # obs-intelligence
 curl http://localhost:9005/health      # ui-backend
 
-# AIOps Command Center UI
-open http://localhost:3005             # production build (Nginx)
-open http://localhost:3500             # dev server (Vite)
+# AIOps Command Center (Streamlit)
+open http://localhost:3500             # 7-tab Streamlit dashboard
 
 # Ollama model status
 docker compose exec local-llm ollama list
@@ -414,7 +490,7 @@ Domain agents (on each alert):
 | `WORKFLOW_STEP_DELAY_SECONDS` | compute-agent, storage-agent | `5` | Seconds each xyOps canvas node stays highlighted |
 | `LOCAL_LLM_URL` | compute-agent, storage-agent, obs-intelligence | `http://local-llm:11434` | Ollama REST API base URL |
 | `CHROMA_URL` | compute-agent, storage-agent, obs-intelligence | `http://knowledge-store:8000` | ChromaDB HTTP API URL |
-| `LOCAL_LLM_MODEL` | compute-agent, storage-agent, obs-intelligence | `llama3.2:3b` | Ollama model for local corroboration |
+| `LOCAL_LLM_MODEL` | compute-agent, storage-agent, obs-intelligence | `qwen3.5` | Ollama model for local corroboration |
 | `LOCAL_LLM_ENABLED` | compute-agent, storage-agent, obs-intelligence | `true` | Set `false` to disable local validation |
 | `LOCAL_LLM_MIN_SIMILARITY` | obs-intelligence | `0.82` | Min cosine similarity to count a past incident as relevant |
 | `LOCAL_LLM_TOP_K` | obs-intelligence | `5` | Max similar incidents retrieved from ChromaDB per query |
@@ -430,7 +506,9 @@ See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
 
 | Version | Highlights |
 |---|---|
-| **v8.0.0** | Block F: Local LLM validation + ChromaDB knowledge store + AIOps Command Center UI |
+| **v10.0.0** | Streamlit Command Center (7 tabs) + Agent Mesh vis.js topology + qwen3.5 LLM + compute-agent DB fallback fix |
+| **v9.0.0** | AIOps Command Center UI (React) — ui-backend BFF, pipeline playback, scenario explorer, trust-score tracker |
+| **v8.0.0** | Block F: Local LLM validation + ChromaDB knowledge store |
 | **v7.0.0** | SRE Reasoning Layer — deterministic `SREAssessment`, OpenAI→Claude failover, outcome tracking |
 | **v6.0.0** | Continuous intelligence — predictive alert dispatch, background APScheduler loops |
 | **v5.0.0** | Risk scoring, evidence builder, LLM enrichment, anomaly detection, forecasting |
