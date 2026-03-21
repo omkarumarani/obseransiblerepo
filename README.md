@@ -415,7 +415,7 @@ Closes the model learning cycle: every recorded remediation outcome — and ever
 | **Notification integrations** | Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level | Medium |
 | **Auth / API key middleware** | Bearer token validation on agent webhook endpoints and obs-intelligence `/analyze`; currently open | Medium |
 | **Ansible live mode** | Real playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
-| **Ollama GPU acceleration** | Add `deploy.resources.reservations.devices` to `local-llm` service for CUDA/ROCm GPU inference | Low |
+| ~~**Ollama GPU acceleration**~~ | ~~Add `deploy.resources.reservations.devices` to `local-llm` service for CUDA/ROCm GPU inference~~ | ✅ Done (v12.1.0) |
 | **ChromaDB auth** | Enable ChromaDB token authentication before exposing to untrusted networks | Low |
 | **Outcome dashboard drill-down** | Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log | Low |
 
@@ -606,6 +606,7 @@ See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
 
 | Version | Highlights |
 |---|---|
+| **v12.1.0** | Ollama GPU acceleration — `deploy.resources.reservations.devices` in `local-llm` for NVIDIA CUDA (`driver: nvidia, count: all, capabilities: [gpu]`) + commented AMD ROCm `/dev/kfd`+`/dev/dri` device block |
 | **v12.0.0** | SREAssessment RL-lite feedback loop — exponential decay, dynamic evidence tiers, outcome normalisation, validation signals, `feedback-stats` API, Streamlit learning panel |
 | **v11.0.0** | Multi-agent cross-domain correlation engine (`CrossDomainCorrelator`) + unified `SREAssessment` + agent signals + Streamlit cross-domain panel + xyOps ticket comments |
 | **v10.0.0** | Streamlit Command Center (7 tabs) + Agent Mesh vis.js topology + qwen3.5 LLM + compute-agent DB fallback fix |
