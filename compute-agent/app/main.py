@@ -80,6 +80,8 @@ from .ai_analyst import (
     fetch_loki_logs,
     fetch_prometheus_context,
     generate_ai_analysis,
+    generate_local_llm_analysis,
+    deterministic_analysis,
     get_notify_list,
 )
 from .approval_workflow import (
@@ -150,6 +152,7 @@ REQUIRE_APPROVAL: bool = os.getenv("REQUIRE_APPROVAL", "true").lower() != "false
 # Only send to approval gate if severity >= this value
 APPROVAL_SEVERITY_THRESHOLD: set[str] = {"warning", "critical"}
 OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
+LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -880,12 +883,72 @@ async def _create_xyops_ticket(
             f"RCA complete — confidence: **{confidence}** | {rca_words}-word analysis",
             _xyops_post,
         )
+        # Fallback tier 2: local LLM (Ollama) if cloud AI returned nothing
+        if not analysis.get("ansible_playbook"):
+            logger.info(
+                "Cloud AI returned no playbook — trying local LLM fallback  "
+                "alert=%s  service=%s", alert_name, service_name
+            )
+            await post_step_comment(
+                ticket_id, 3, "started",
+                "Cloud AI unavailable — trying **local LLM** (Ollama)...",
+                _xyops_post,
+            )
+            analysis = await generate_local_llm_analysis(
+                alert_name=alert_name,
+                service_name=service_name,
+                severity=severity,
+                description=description,
+                logs=logs,
+                metrics=metrics,
+                http=_http,
+            )
+            if analysis.get("ansible_playbook"):
+                confidence = analysis.get("confidence", "low")
+                await post_step_comment(
+                    ticket_id, 3, "done",
+                    f"Local LLM analysis complete — confidence: **{confidence}** (Ollama/{LOCAL_LLM_MODEL})",
+                    _xyops_post,
+                )
+
+        # Fallback tier 3: deterministic scenario catalog
+        if not analysis.get("ansible_playbook"):
+            logger.info(
+                "Local LLM returned no playbook — falling back to deterministic analysis  "
+                "alert=%s  service=%s", alert_name, service_name
+            )
+            analysis = deterministic_analysis(
+                alert_name=alert_name,
+                service_name=service_name,
+                severity=severity,
+            )
+            if analysis.get("ansible_playbook"):
+                await post_step_comment(
+                    ticket_id, 3, "done",
+                    "AI unavailable — using **deterministic scenario analysis** (playbook generated)",
+                    _xyops_post,
+                )
     else:
         await post_step_comment(
             ticket_id, 3, "skipped",
-            "AI analysis — SKIPPED (`CLAUDE_API_KEY` not set)",
+            "AI analysis — SKIPPED (no API key set) — trying local LLM then deterministic",
             _xyops_post,
         )
+        analysis = await generate_local_llm_analysis(
+            alert_name=alert_name,
+            service_name=service_name,
+            severity=severity,
+            description=description,
+            logs=logs,
+            metrics=metrics,
+            http=_http,
+        )
+        if not analysis.get("ansible_playbook"):
+            analysis = deterministic_analysis(
+                alert_name=alert_name,
+                service_name=service_name,
+                severity=severity,
+            )
 
     # ── 4. Update ticket body with enriched content ──────────────────────────
     await post_step_comment(
@@ -940,6 +1003,7 @@ async def _create_xyops_ticket(
             bridge_trace_id=bridge_trace_id,
             xyops_post=_xyops_post,
             xyops_url=XYOPS_URL,
+            http=_http,
             risk_score=0.0,
         )
         approval_ticket_id = approval_req.approval_ticket_id

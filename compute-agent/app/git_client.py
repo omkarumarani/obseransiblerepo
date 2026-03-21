@@ -248,7 +248,12 @@ async def _ensure_token(http: httpx.AsyncClient) -> str:
 
     resp = await http.post(
         f"{GITEA_URL}/api/v1/users/{GITEA_USER}/tokens",
-        json={"name": token_name},
+        json={
+            "name": token_name,
+            # Gitea 1.21+ requires explicit scopes; write:repository covers
+            # branch/file/PR operations; write:issue covers PR comments.
+            "scopes": ["write:repository", "write:issue", "read:user", "read:organization"],
+        },
         headers={**_auth_header(), "Content-Type": "application/json"},
         timeout=10.0,
     )
@@ -321,6 +326,34 @@ async def commit_playbook(
         url  = data.get("content", {}).get("html_url", "")
         logger.info("Committed playbook  branch=%s  path=%s", branch, filepath)
         return {"branch": branch, "filepath": filepath, "sha": sha, "url": url}
+    elif resp.status_code == 422:
+        # File already exists on this branch (inherited from main) — fetch SHA and update
+        logger.info("File already exists — fetching SHA to update  path=%s  branch=%s", filepath, branch)
+        get_resp = await http.get(
+            f"{GITEA_URL}/api/v1/repos/{GITEA_ORG}/{GITEA_REPO}/contents/{filepath}",
+            params={"ref": branch},
+            headers=_auth_header(token),
+            timeout=15.0,
+        )
+        if get_resp.status_code != 200:
+            logger.warning("Could not fetch existing file SHA: HTTP %d", get_resp.status_code)
+            return {"error": f"commit failed: HTTP {resp.status_code}"}
+        existing_sha = get_resp.json().get("sha", "")
+        put_resp = await http.put(
+            f"{GITEA_URL}/api/v1/repos/{GITEA_ORG}/{GITEA_REPO}/contents/{filepath}",
+            json={"message": commit_msg, "content": content_b64, "branch": branch, "sha": existing_sha},
+            headers={**_auth_header(token), "Content-Type": "application/json"},
+            timeout=15.0,
+        )
+        if put_resp.status_code == 200:
+            data = put_resp.json()
+            sha  = data.get("content", {}).get("sha", "")
+            url  = data.get("content", {}).get("html_url", "")
+            logger.info("Updated playbook  branch=%s  path=%s", branch, filepath)
+            return {"branch": branch, "filepath": filepath, "sha": sha, "url": url}
+        else:
+            logger.warning("Could not update playbook: HTTP %d %s", put_resp.status_code, put_resp.text[:200])
+            return {"error": f"commit update failed: HTTP {put_resp.status_code}"}
     else:
         logger.warning("Could not commit playbook: HTTP %d %s", resp.status_code, resp.text[:200])
         return {"error": f"commit failed: HTTP {resp.status_code}"}

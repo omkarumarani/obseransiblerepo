@@ -290,7 +290,47 @@ async def _post(path: str, body: dict) -> dict:
 
 
 def _require_session(session_id: str) -> PipelineSession:
-    """Load session or raise 404 if not found."""
+    """Load session or raise 404 if not found.
+
+    Special alias ``default`` returns the most recently created session
+    so the Command Center can poll without knowing the exact session_id.
+    """
+    if session_id == "default":
+        if _sessions:
+            return max(_sessions.values(), key=lambda s: s.created_at)
+        # In-memory evicted (GC) or fresh restart — fall back to DB most-recent row
+        try:
+            with _db_conn() as conn:
+                row = conn.execute(
+                    "SELECT * FROM pipeline_sessions ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+            if row:
+                analysis = json.loads(row["analysis_json"] or "{}")
+                return PipelineSession(
+                    session_id        = row["session_id"],
+                    service_name      = row["service_name"] or "",
+                    alert_name        = row["alert_name"] or "",
+                    severity          = row["severity"] or "warning",
+                    summary           = analysis.get("summary", ""),
+                    description       = "",
+                    dashboard_url     = "http://grafana:3000",
+                    starts_at         = "",
+                    created_at        = row["created_at"] or time.time(),
+                    stage             = row["stage"] or "complete",
+                    risk_score        = row["risk_score"] or 0.0,
+                    risk_level        = row["risk_level"] or "unknown",
+                    autonomy_decision = row["autonomy_decision"] or "APPROVAL_GATED",
+                    outcome           = row["outcome"] or "pending",
+                    completed_at      = row["completed_at"],
+                    mttr_seconds      = row["mttr_seconds"] or 0.0,
+                    analysis          = analysis,
+                )
+        except Exception as exc:
+            logger.warning("_require_session DB fallback failed: %s", exc)
+        raise HTTPException(
+            status_code=404,
+            detail="No pipeline sessions exist yet. Trigger an alert first.",
+        )
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(
@@ -1123,6 +1163,103 @@ async def agent_approval(req: AgentRequest) -> dict:
 
 # ── Debug: inspect session state ───────────────────────────────────────────────
 
+_AGENT_STAGES = [
+    ("ticket-creator",   "started"),
+    ("log-fetcher",      "logs"),
+    ("metrics-fetcher",  "metrics"),
+    ("ai-analyst",       "analyzed"),
+    ("ticket-writer",    "ticket_enriched"),
+    ("approval-gateway", "awaiting_approval"),
+]
+_TERMINAL_STAGES = {"complete", "autonomous_executing"}
+
+
+def _build_agent_states(session: "PipelineSession") -> list[dict]:
+    """Convert pipeline stage into a list of AgentState dicts for the UI."""
+    current = session.stage
+    result = []
+    reached_current = False
+    for name, stage in _AGENT_STAGES:
+        if current in _TERMINAL_STAGES:
+            result.append({"name": name, "status": "completed"})
+        elif current == stage:
+            result.append({"name": name, "status": "running"})
+            reached_current = True
+        elif reached_current:
+            result.append({"name": name, "status": "idle"})
+        else:
+            result.append({"name": name, "status": "completed"})
+    return result
+
+
+@pipeline_router.get("/active")
+async def get_active_sessions() -> dict:
+    """Return currently active (in-memory) pipeline sessions for the Command Center."""
+    _gc_sessions()
+    sessions = [
+        {
+            "session_id":  s.session_id,
+            "service_name": s.service_name,
+            "alert_name":  s.alert_name,
+            "severity":    s.severity,
+            "stage":       s.stage,
+            "risk_score":  round(s.risk_score, 2),
+            "risk_level":  s.risk_level,
+            "outcome":     s.outcome,
+            "created_at":  s.created_at,
+            "age_seconds": round(time.time() - s.created_at),
+            "domain":      "compute",
+        }
+        for s in sorted(_sessions.values(), key=lambda x: x.created_at, reverse=True)
+    ]
+    return {"sessions": sessions, "count": len(sessions)}
+
+
+@pipeline_router.get("/history")
+async def get_pipeline_history(
+    limit: int = 50,
+    outcome: str | None = None,
+    service_name: str | None = None,
+) -> dict:
+    """Return completed pipeline sessions from SQLite for the Command Center history view."""
+    try:
+        query = "SELECT * FROM pipeline_sessions WHERE 1=1"
+        params: list = []
+        if outcome:
+            query += " AND outcome = ?"
+            params.append(outcome)
+        if service_name:
+            query += " AND service_name = ?"
+            params.append(service_name)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with _db_conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        history = [
+            {
+                "session_id":        row["session_id"],
+                "service_name":      row["service_name"],
+                "alert_name":        row["alert_name"],
+                "severity":          row["severity"],
+                "stage":             row["stage"],
+                "risk_score":        round(row["risk_score"] or 0, 2),
+                "risk_level":        row["risk_level"] or "unknown",
+                "autonomy_decision": row["autonomy_decision"] or "APPROVAL_GATED",
+                "outcome":           row["outcome"] or "pending",
+                "created_at":        row["created_at"],
+                "completed_at":      row["completed_at"],
+                "mttr_seconds":      row["mttr_seconds"] or 0,
+                "domain":            "compute",
+            }
+            for row in rows
+        ]
+        return {"history": history, "count": len(history)}
+    except Exception as exc:
+        logger.warning("get_pipeline_history failed: %s", exc)
+        return {"history": [], "count": 0}
+
 @pipeline_router.get("/session/{session_id}")
 async def get_session(session_id: str) -> dict:
     """Return current session state for UI visualization."""
@@ -1143,6 +1280,26 @@ async def get_session(session_id: str) -> dict:
         "severity": session.severity,
         "summary": session.summary,
         "stage": session.stage,
+        # ── PipelineState compatibility fields ──────────────────────────────
+        # `status` maps the internal stage to running/completed/failed
+        "status": (
+            "completed" if session.stage == "complete"
+            else "failed"   if session.outcome == "failure"
+            else "running"
+        ),
+        # `agents` gives each pipeline step a name + status for the UI
+        "agents": _build_agent_states(session),
+        # `incident` block for the dashboard summary card
+        "incident": {
+            "service_name": session.service_name,
+            "alert_name":   session.alert_name,
+            "severity":     session.severity,
+            "risk_score":   round(session.risk_score, 2),
+            "scenario_matched": session.analysis.get("scenario_id"),
+            "grafana_url":  session.dashboard_url,
+        },
+        "approval_required": bool(session.approval_id),
+        # ────────────────────────────────────────────────────────────────────
         "ticket_id": session.ticket_id,
         "ticket_num": session.ticket_num,
         "approval_id": session.approval_id,

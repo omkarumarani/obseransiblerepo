@@ -369,16 +369,16 @@ async def health_check():
 # Section 1.1: Live Pipeline State
 # ─────────────────────────────────────────────────────────────
 
-@app.get("/pipeline/session/{session_id}", response_model=PipelineState)
+@app.get("/pipeline/session/{session_id}")
 async def get_live_session(session_id: str, domain: str = "compute"):
-    """Get current state of a live pipeline session"""
+    """Get current state of a live pipeline session — proxies raw response from compute/storage agent"""
     agent_url = COMPUTE_AGENT_URL if domain == "compute" else STORAGE_AGENT_URL
-    
+
     data = await fetch_json(f"{agent_url}/pipeline/session/{session_id}")
     if not data:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    return PipelineState(**data)
+
+    return data
 
 
 @app.get("/pipeline/active", response_model=List[str])

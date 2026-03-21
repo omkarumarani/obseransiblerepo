@@ -56,6 +56,13 @@ NOTIFY_EMAIL: str = os.getenv("NOTIFY_EMAIL", "")
 
 AI_ENABLED: bool = _USE_OPENAI or _USE_CLAUDE
 
+# ── Local LLM (Ollama) — secondary fallback ────────────────────────────────────
+LOCAL_LLM_URL: str  = os.getenv("LOCAL_LLM_URL",   "http://local-llm:11434")
+LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
+LOCAL_LLM_ENABLED: bool = os.getenv("LOCAL_LLM_ENABLED", "false").lower() == "true"
+# Ollama exposes an OpenAI-compatible endpoint at /v1/chat/completions
+_LOCAL_LLM_URL = f"{LOCAL_LLM_URL.rstrip('/')}/v1/chat/completions"
+
 # ── Provider endpoints & headers ───────────────────────────────────────────────
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 _CLAUDE_URL = "https://api.anthropic.com/v1/messages"
@@ -65,9 +72,11 @@ _CLAUDE_HEADERS = {
 }
 
 logger.info(
-    "AI provider: %s  model: %s",
+    "AI provider: %s  model: %s  local_llm: %s (%s)",
     "openai" if _USE_OPENAI else ("claude" if _USE_CLAUDE else "disabled"),
     AI_MODEL if AI_ENABLED else "n/a",
+    "enabled" if LOCAL_LLM_ENABLED else "disabled",
+    LOCAL_LLM_MODEL,
 )
 
 
@@ -311,6 +320,100 @@ def _get_compute_catalog() -> list:
         from obs_intelligence.scenario_correlator import load_catalog
         _compute_catalog = load_catalog(domain="compute")
     return _compute_catalog
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Local LLM analysis (Ollama — secondary fallback)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def generate_local_llm_analysis(
+    alert_name: str,
+    service_name: str,
+    severity: str,
+    description: str,
+    logs: str,
+    metrics: dict[str, str],
+    http: httpx.AsyncClient,
+) -> dict[str, Any]:
+    """
+    Call the local Ollama instance (llama3.2:3b or configured model) via its
+    OpenAI-compatible /v1/chat/completions endpoint.
+
+    Falls back to the same JSON schema as generate_ai_analysis() so the rest
+    of the pipeline is unaffected. Returns {} on any failure so the caller can
+    fall through to deterministic_analysis().
+    """
+    if not LOCAL_LLM_ENABLED:
+        logger.info("Local LLM disabled (LOCAL_LLM_ENABLED != true)")
+        return {}
+
+    metrics_text = "\n".join(f"  {k}: {v}" for k, v in metrics.items()) or "  (no metrics)"
+    logs_text = (logs or "(no logs)")[:2000]
+
+    # Compact prompt — local models have small context windows
+    prompt = f"""You are an SRE. Respond with ONLY a JSON object, no markdown fences.
+
+Incident: alert={alert_name}  service={service_name}  severity={severity}
+Description: {description}
+Metrics: {metrics_text}
+Logs: {logs_text}
+
+Respond with this exact JSON (fill in real values, do not copy placeholders):
+{{
+  "rca_summary": "2-sentence root cause for {alert_name} on {service_name}",
+  "rca_detail": {{"symptoms": ["high memory usage detected"], "probable_cause": "memory leak or unbounded cache growth", "contributing_factors": ["no memory limits set"], "blast_radius": "single service {service_name}"}},
+  "confidence": "low",
+  "ansible_playbook": "---\\n- name: Remediate {alert_name} on {service_name}\\n  hosts: localhost\\n  connection: local\\n  gather_facts: false\\n  tasks:\\n    - name: Log remediation start\\n      ansible.builtin.debug:\\n        msg: Starting remediation of {alert_name} on {service_name}\\n    - name: Restart service to clear memory\\n      ansible.builtin.debug:\\n        msg: Would restart {service_name} container here in live mode\\n  post_tasks:\\n    - name: Verify service recovered\\n      ansible.builtin.debug:\\n        msg: Post-validation complete",
+  "ansible_description": "Restart {service_name} to clear elevated memory and restore normal operation",
+  "test_cases": [
+    {{"id": "TC-PRE-1", "name": "Assert service is reachable", "assertion": "HTTP /health returns 200", "phase": "pre"}},
+    {{"id": "TC-POST-1", "name": "Verify memory usage dropped", "assertion": "memory_usage_pct below threshold after restart", "phase": "post"}}
+  ],
+  "pr_description": "Automated remediation playbook for {alert_name} on {service_name}",
+  "pr_title": "fix: remediate {alert_name} on {service_name}",
+  "estimated_fix_time_minutes": 10,
+  "rollback_steps": ["Revert restart and monitor service health for 5 minutes"]
+}}"""
+
+    payload = {
+        "model": LOCAL_LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "stream": False,
+    }
+
+    try:
+        resp = await http.post(
+            _LOCAL_LLM_URL,
+            json=payload,
+            timeout=60.0,   # local models can be slow on CPU
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Local LLM returned HTTP %d: %s",
+                resp.status_code, resp.text[:200],
+            )
+            return {}
+
+        content = resp.json()["choices"][0]["message"]["content"].strip()
+        # Strip any accidental markdown fences the model may add
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        analysis = json.loads(content)
+        logger.info(
+            "Local LLM analysis complete  alert=%s  model=%s  confidence=%s",
+            alert_name, LOCAL_LLM_MODEL, analysis.get("confidence", "?"),
+        )
+        return analysis
+
+    except json.JSONDecodeError as exc:
+        logger.warning("Local LLM response not valid JSON: %s", exc)
+        return {}
+    except Exception as exc:
+        logger.warning("Local LLM call failed: %s", exc)
+        return {}
 
 
 def deterministic_analysis(
