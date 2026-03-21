@@ -44,7 +44,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .ai_analyst import (
@@ -1394,3 +1395,36 @@ async def get_session(session_id: str) -> dict:
         "trust_progress": trust_progress,
         "trust_metrics": trust_metrics,
     }
+
+
+@pipeline_router.get("/events")
+async def pipeline_events(request: Request):
+    """SSE stream — emits a JSON event whenever the latest session's stage changes."""
+
+    async def _stream():
+        last_stage = None
+        while True:
+            if await request.is_disconnected():
+                break
+            # Find newest session
+            session = max(_sessions.values(), key=lambda s: s.created_at) if _sessions else None
+            if session:
+                current = session.stage
+                if current != last_stage:
+                    payload = json.dumps({
+                        "session_id": session.session_id,
+                        "stage": current,
+                        "service_name": session.service_name,
+                        "severity": session.severity,
+                        "outcome": session.outcome,
+                        "timestamp": time.time(),
+                    })
+                    yield f"data: {payload}\n\n"
+                    last_stage = current
+                else:
+                    yield ": heartbeat\n\n"
+            else:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")

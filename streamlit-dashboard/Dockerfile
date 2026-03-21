@@ -6,6 +6,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
+COPY shared.py .
+COPY pages/ ./pages/
 
 # Streamlit config — headless, no telemetry
 ENV STREAMLIT_SERVER_HEADLESS=true \

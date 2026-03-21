@@ -74,12 +74,21 @@ route:
       group_interval: 1m
       repeat_interval: 1h
       receiver: xyops-incidents-critical
+      routes:
+        # Fan-out critical alerts to Slack + PagerDuty alongside xyOps
+        - receiver: slack-critical
+          continue: true
+        - receiver: pagerduty-critical
+          continue: true
 
-    # OTel collector alerts: separate group (infra team)
-    - match:
-        alertname: CollectorDroppingData
+    # Warning/info alerts: also send a copy to the email receiver
+    - match_re:
+        severity: warning|info
       receiver: xyops-incidents
-      group_wait: 1m
+      continue: true
+    - match_re:
+        severity: warning|info
+      receiver: email-all
 
 # ── Inhibit rules ─────────────────────────────────────────────
 # If a critical alert is firing for a service, suppress the
@@ -137,6 +146,40 @@ receivers:
         http_config:
           follow_redirects: true
         max_alerts: 50
+
+  # ── Notification integrations (v14.0.0) ───────────────────────
+  # Slack — critical alerts posted to an incident channel.
+  # Set SLACK_WEBHOOK_URL env var or replace the placeholder URL.
+  - name: slack-critical
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/REPLACE/WITH/REAL_WEBHOOK'
+        channel: '#incidents-critical'
+        title: '{{ .CommonAnnotations.summary }}'
+        text: >-
+          *Alert:* {{ .CommonLabels.alertname }}
+          *Severity:* {{ .CommonLabels.severity }}
+          *Service:* {{ .CommonLabels.service_name }}
+          {{ .CommonAnnotations.description }}
+        send_resolved: true
+
+  # PagerDuty — critical alerts trigger an incident.
+  # Replace the routing_key with your PagerDuty Events v2 integration key.
+  - name: pagerduty-critical
+    pagerduty_configs:
+      - routing_key: 'REPLACE_WITH_PAGERDUTY_INTEGRATION_KEY'
+        description: '{{ .CommonAnnotations.summary }}'
+        severity: '{{ .CommonLabels.severity }}'
+        client: 'AIOps Alertmanager'
+        client_url: 'http://localhost:9093'
+
+  # Email — warning/info alerts sent to the on-call distribution list.
+  # Configure global SMTP settings at the top of this file first.
+  - name: email-all
+    email_configs:
+      - to: 'oncall-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[AIOps] {{ .CommonLabels.alertname }} — {{ .CommonLabels.severity }}'
 
 # ── Templates ─────────────────────────────────────────────────
 # (Optional) Custom notification templates.

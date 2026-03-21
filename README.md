@@ -2,7 +2,10 @@
 
 A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a **Streamlit Command Center** with live agent mesh topology.
 
-> **Latest:** v13.0.0 — Persistence & cold-start hardening: `recurrence_count` and the full `current_intelligence` dict now survive restarts via a new SQLite `StateStore`; ChromaDB is pre-seeded with 10 synthetic incidents on day one; and a LoRA fine-tuning pipeline for qwen3.5 is included as an opt-in Docker service.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
+> **Latest:** v14.0.0 — Multi-page dashboard + SSE + edge bandwidth labels + notification integrations.
+> Streamlit split into 7 page files (`pages/*.py`) with shared config (`shared.py`); dark/light theme toggle;
+> SSE `/pipeline/events` on compute-agent and storage-agent; vis.js click-to-drill and edge bandwidth labels;
+> Slack/PagerDuty/email alertmanager receivers routed by severity.  See [RELEASE-NOTES.md](RELEASE-NOTES.md).
 
 ---
 
@@ -24,10 +27,11 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
   - [Phase 11 — Multi-agent Cross-Domain Correlation](#phase-11--multi-agent-cross-domain-correlation)
   - [Phase 12 — SREAssessment Feedback Loop (RL-lite)](#phase-12--sreassessment-feedback-loop-rl-lite)
   - [Phase 13 — Persistence, Cold-Start & Fine-Tuning](#phase-13--persistence-cold-start--fine-tuning)
+  - [Phase 14 — Multi-Page Dashboard, SSE & Notifications](#phase-14--multi-page-dashboard-sse--notifications)
 - [What Is Still To Add](#what-is-still-to-add)
-  - [Phase 13 — Dashboard Enhancements](#phase-13--dashboard-enhancements)
-  - [Phase 13 — Intelligence & Autonomy](#phase-13--intelligence--autonomy)
-  - [Phase 13 — Integrations & Hardening](#phase-13--integrations--hardening)
+  - [Phase 14 — Dashboard Enhancements (remaining)](#phase-14--dashboard-enhancements-remaining)
+  - [Phase 14 — Intelligence & Autonomy](#phase-14--intelligence--autonomy)
+  - [Phase 14 — Integrations & Hardening](#phase-14--integrations--hardening)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Key Workflows](#key-workflows)
@@ -438,19 +442,72 @@ docker compose --profile finetune run --rm finetuner python train_lora.py --use-
 
 ---
 
+### Phase 14 — Multi-Page Dashboard, SSE & Notifications
+
+Refactored the Streamlit Command Center into a multi-page app, added real-time SSE push, and wired Slack/PagerDuty/email notification receivers.
+
+**`streamlit-dashboard/shared.py`** — new shared config + helper module
+
+| Capability | Detail |
+|---|---|
+| **Centralised config** | All `os.getenv(...)` constants (agent URLs, Gitea org/repo, external service URLs) defined once and imported by all pages |
+| **HTTP helpers** | `api_get()`, `api_post()`, `gitea_get()` with try/except returning `None` on error |
+| **UI formatters** | `since_str()`, `sev_icon()`, `status_icon()` for consistent display across pages |
+| **Dark/light CSS** | `inject_theme_css()` reads `st.session_state["theme"]` and injects either `_DARK_CUSTOM` or `_LIGHT_CUSTOM` CSS block |
+| **Page scaffolding** | `page_header(title)` (theme + sidebar + title), `page_footer(key, fragment_mode)` (auto-refresh or fragment caption) |
+| **Sidebar controls** | Dark/light toggle + quick-links to all external service UIs |
+
+**`streamlit-dashboard/pages/`** — 7 page files (auto-discovered by Streamlit)
+
+| Page | File | Key Feature |
+|---|---|---|
+| Live Pipeline | `1_Live_Pipeline.py` | `@st.fragment(run_every="1s")` — independent 1-second refresh of compute-agent pipeline |
+| Storage Pipeline | `2_Storage_Pipeline.py` | Mirrors compute view for storage-agent; inline Approve/Decline; history table with LinkColumn |
+| Pending Approvals | `3_Pending_Approvals.py` | Combined approval queue from both agents + Gitea open PRs table |
+| Workflow Outcomes | `4_Workflow_Outcomes.py` | xyOps ticket + Grafana drill-down via `st.column_config.LinkColumn` |
+| Pipeline History | `5_Pipeline_History.py` | Merged compute + storage history with agent/severity filters |
+| Autonomy & Trust | `6_Autonomy_Trust.py` | Trust-tier config, decision distribution, scenario confidence learning |
+| Agent Mesh | `7_Agent_Mesh.py` | vis.js topology with edge bandwidth labels + click-to-drill node navigation |
+
+**`compute-agent/app/pipeline.py`** — SSE endpoint
+
+| Endpoint | Detail |
+|---|---|
+| `GET /pipeline/events` | `StreamingResponse(media_type="text/event-stream")` — emits `data: {json}\n\n` on stage change, `: heartbeat\n\n` otherwise; polls every 0.5s |
+
+**`storage-agent/app/pipeline.py`** — 3 new endpoints
+
+| Endpoint | Detail |
+|---|---|
+| `GET /pipeline/session/default` | "default" alias — returns most recently created session (mirrors compute-agent) |
+| `GET /pipeline/history` | Returns `{"history": [...], "count": n}` from in-memory `_sessions` dict |
+| `GET /pipeline/events` | SSE stream identical to compute-agent pattern |
+
+**`alertmanager/alertmanager.yml`** — notification integrations
+
+| Receiver | Detail |
+|---|---|
+| `slack-critical` | `slack_configs` with webhook URL placeholder; posts to `#incidents-critical` channel |
+| `pagerduty-critical` | `pagerduty_configs` with Events v2 routing key placeholder |
+| `email-all` | `email_configs` to on-call distribution list; warning/info severity routing |
+
+Routes: critical alerts fan out to `slack-critical` + `pagerduty-critical` via `continue: true`; warning/info alerts also copied to `email-all`.
+
+---
+
 ## What Is Still To Add - to follow
 
-### Phase 13 — Dashboard Enhancements
+### Phase 14 — Dashboard Enhancements (remaining)
 | Item | Description | Effort |
 |---|---|---|
-| **Streamlit Storage Agent tab** | Add a second Live Pipeline tab (or tab group) for the storage-agent pipeline, mirroring the compute-agent view | Medium |
-| **WebSocket / SSE real-time push** | Replace 5-second polling with a Server-Sent Events stream from compute-agent so the dashboard reacts instantly to stage changes | Medium |
-| **Agent Mesh — edge bandwidth labels** | Show estimated data size / latency on each active edge (e.g. `"12 log lines"`, `"3 metrics"`) | Low |
-| **Agent Mesh — click-to-drill** | Click a node in the vis.js graph → open the relevant service UI (Gitea, xyOps, Prometheus) in a new browser tab | Low |
-| **Streamlit multi-page** | Split the 7 tabs into Streamlit multi-page app (separate `.py` files per tab) to keep codebase maintainable as it grows | Medium |
-| **Dark/light theme toggle** | Allow users to switch between the dark Streamlit custom CSS and default light theme | Low |
+| ~~**Streamlit Storage Agent tab**~~ | ~~Add a second Live Pipeline tab for the storage-agent pipeline, mirroring the compute-agent view~~ | ✅ Done (v14.0.0) |
+| ~~**WebSocket / SSE real-time push**~~ | ~~Replace 5-second polling with SSE stream from compute-agent~~ | ✅ Done (v14.0.0) |
+| ~~**Agent Mesh — edge bandwidth labels**~~ | ~~Show estimated data size / latency on each active edge~~ | ✅ Done (v14.0.0) |
+| ~~**Agent Mesh — click-to-drill**~~ | ~~Click a node in the vis.js graph → open the relevant service UI~~ | ✅ Done (v14.0.0) |
+| ~~**Streamlit multi-page**~~ | ~~Split the 7 tabs into Streamlit multi-page app~~ | ✅ Done (v14.0.0) |
+| ~~**Dark/light theme toggle**~~ | ~~Allow users to switch between dark and light themes~~ | ✅ Done (v14.0.0) |
 
-### Phase 13 — Intelligence & Autonomy
+### Phase 14 — Intelligence & Autonomy
 | Item | Description | Effort |
 |---|---|---|
 | ~~**Multi-agent correlation**~~ | ~~When compute and storage alerts fire simultaneously, detect cross-domain cascading failures~~ | ✅ Done (v11.0.0) |
@@ -460,15 +517,15 @@ docker compose --profile finetune run --rm finetuner python train_lora.py --use-
 | ~~**ChromaDB cold-start seeding**~~ | ~~Pre-seed the knowledge store with synthetic past incidents so local validation works on day one~~ | ✅ Done (v13.0.0) |
 | ~~**qwen3.5 fine-tuning**~~ | ~~Fine-tune a LoRA adapter on recorded incident outcomes to improve corroboration accuracy over time~~ | ✅ Done (v13.0.0) |
 
-### Phase 13 — Integrations & Hardening
+### Phase 14 — Integrations & Hardening
 | Item | Description | Effort |
 |---|---|---|
-| **Notification integrations** | Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level | Medium |
+| ~~**Notification integrations**~~ | ~~Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level~~ | ✅ Done (v14.0.0) |
+| ~~**Outcome dashboard drill-down**~~ | ~~Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log~~ | ✅ Done (v14.0.0) |
 | **Auth / API key middleware** | Bearer token validation on agent webhook endpoints and obs-intelligence `/analyze`; currently open | Medium |
 | **Ansible live mode** | Real playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
 | **Ollama GPU acceleration** | Add `deploy.resources.reservations.devices` to `local-llm` service for CUDA/ROCm GPU inference | Low |
 | **ChromaDB auth** | Enable ChromaDB token authentication before exposing to untrusted networks | Low |
-| **Outcome dashboard drill-down** | Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log | Low |
 
 ---
 
@@ -657,6 +714,7 @@ See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
 
 | Version | Highlights |
 |---|---|
+| **v14.0.0** | Multi-page dashboard (7 pages + shared.py) — Streamlit multi-page architecture; dark/light theme toggle; SSE `/pipeline/events` on compute-agent & storage-agent; vis.js edge bandwidth labels + click-to-drill; storage pipeline default/history/SSE endpoints; Slack/PagerDuty/email alertmanager receivers; outcome drill-down to xyOps + Grafana |
 | **v13.0.0** | Persistence + cold-start hardening — `StateStore` SQLite for `current_intelligence` + `recurrence_count`; 10-entry ChromaDB cold-start seeder; LoRA fine-tuning `finetuner` Docker service (`--profile finetune`) |
 | **v12.0.0** | SREAssessment RL-lite feedback loop — exponential decay, dynamic evidence tiers, outcome normalisation, validation signals, `feedback-stats` API, Streamlit learning panel |
 | **v11.0.0** | Multi-agent cross-domain correlation engine (`CrossDomainCorrelator`) + unified `SREAssessment` + agent signals + Streamlit cross-domain panel + xyOps ticket comments |

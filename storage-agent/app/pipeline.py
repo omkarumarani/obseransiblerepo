@@ -28,7 +28,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .storage_analyst import (
@@ -665,9 +666,15 @@ async def _run_playbook(session: StoragePipelineSession, http: httpx.AsyncClient
 @pipeline_router.get("/session/{session_id}")
 async def get_session(session_id: str) -> dict:
     """Debug: inspect current pipeline session state."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"No session: {session_id}")
+    if session_id == "default":
+        if _sessions:
+            session = max(_sessions.values(), key=lambda s: s.created_at)
+        else:
+            raise HTTPException(status_code=404, detail="No sessions found")
+    else:
+        session = _sessions.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail=f"No session: {session_id}")
     return {
         "session_id": session.session_id,
         "service_name": session.service_name,
@@ -706,6 +713,60 @@ async def get_session(session_id: str) -> dict:
         },
         "bridge_trace_id": session.bridge_trace_id,
     }
+
+
+@pipeline_router.get("/history")
+async def get_pipeline_history(limit: int = 50) -> dict:
+    """Return recent pipeline sessions for the Command Center history view."""
+    sessions = sorted(_sessions.values(), key=lambda s: s.created_at, reverse=True)[:limit]
+    history = [
+        {
+            "session_id":   s.session_id,
+            "service_name": s.service_name,
+            "alert_name":   s.alert_name,
+            "severity":     s.severity,
+            "status":       s.status,
+            "risk_score":   round(s.risk_score, 2),
+            "risk_level":   s.risk_level,
+            "created_at":   s.created_at,
+            "ticket_num":   s.ticket_num,
+            "domain":       "storage",
+        }
+        for s in sessions
+    ]
+    return {"history": history, "count": len(history)}
+
+
+@pipeline_router.get("/events")
+async def pipeline_events(request: Request):
+    """SSE stream — emits a JSON event whenever the latest session stage changes."""
+    import json as _json
+
+    async def _stream():
+        last_status = None
+        while True:
+            if await request.is_disconnected():
+                break
+            session = max(_sessions.values(), key=lambda s: s.created_at) if _sessions else None
+            if session:
+                current = session.status
+                if current != last_status:
+                    payload = _json.dumps({
+                        "session_id": session.session_id,
+                        "status": current,
+                        "service_name": session.service_name,
+                        "severity": session.severity,
+                        "timestamp": time.time(),
+                    })
+                    yield f"data: {payload}\n\n"
+                    last_status = current
+                else:
+                    yield ": heartbeat\n\n"
+            else:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
 
 
 def init_pipeline(app) -> None:
