@@ -2,7 +2,7 @@
 
 A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a **Streamlit Command Center** with live agent mesh topology.
 
-> **Latest:** v12.0.0 — SREAssessment feedback loop (RL-lite): remediation outcomes and LLM validation verdicts now feed back into per-scenario confidence weights via exponential time decay, dynamic evidence tiers (±0.00–±0.25), outcome normalisation, and multi-signal inputs — closing the full learning cycle.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
+> **Latest:** v13.0.0 — Persistence & cold-start hardening: `recurrence_count` and the full `current_intelligence` dict now survive restarts via a new SQLite `StateStore`; ChromaDB is pre-seeded with 10 synthetic incidents on day one; and a LoRA fine-tuning pipeline for qwen3.5 is included as an opt-in Docker service.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
 
 ---
 
@@ -23,6 +23,7 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
   - [Phase 10 — Streamlit Command Center + Agent Mesh + qwen3.5](#phase-10--streamlit-command-center--agent-mesh--qwen35)
   - [Phase 11 — Multi-agent Cross-Domain Correlation](#phase-11--multi-agent-cross-domain-correlation)
   - [Phase 12 — SREAssessment Feedback Loop (RL-lite)](#phase-12--sreassessment-feedback-loop-rl-lite)
+  - [Phase 13 — Persistence, Cold-Start & Fine-Tuning](#phase-13--persistence-cold-start--fine-tuning)
 - [What Is Still To Add](#what-is-still-to-add)
   - [Phase 13 — Dashboard Enhancements](#phase-13--dashboard-enhancements)
   - [Phase 13 — Intelligence & Autonomy](#phase-13--intelligence--autonomy)
@@ -387,6 +388,56 @@ Closes the model learning cycle: every recorded remediation outcome — and ever
 
 ---
 
+### Phase 13 — Persistence, Cold-Start & Fine-Tuning
+
+Hardened obs-intelligence against restarts and cold-start gaps; added opt-in LoRA fine-tuning pipeline.
+
+**`obs-intelligence/app/obs_intelligence/state_store.py`** — new SQLite store (`/data/state.db`)
+
+| Capability | Detail |
+|---|---|
+| **Intelligence state persistence** | `save_intelligence(data)` + `load_intelligence()` — full `current_intelligence` dict (anomalies, forecasts, loop counters, timestamps) persisted after every background loop; restored to dict on startup so dashboard is never blank after restart |
+| **Recurrence counter persistence** | `record_alert_fired(alert_name) → int` — append-only log of firing timestamps; prunes old rows on insert; returns count in 6h window for `ObsFeatures.recurrence_count` |
+| **Hourly cleanup** | `cleanup_old_firings()` called by a third APScheduler job every hour to keep `alert_recurrence` table small |
+| **Thread-safe** | Each method opens a fresh SQLite connection with commit/rollback; safe for concurrent FastAPI + APScheduler access |
+
+**`obs-intelligence/app/background.py`** — `StateStore` wired in
+
+- `_state_store = StateStore()` created at module level (shared with `main.py` via import)
+- `current_intelligence` initialised from `_state_store.load_intelligence()` at import time
+- `_state_store.save_intelligence(current_intelligence)` called after every analysis loop + forecast loop
+- New `run_state_cleanup()` APScheduler job (hourly)
+
+**`obs-intelligence/app/main.py`** — webhook recurrence tracking + seeder launch
+
+- Webhook handler: for every `firing` alert → `_state_store.record_alert_fired(alert_name)`; logs recurrence count with a `WARNING` when ≥ 3 (recurring_failure_signature threshold)
+- Lifespan: `asyncio.create_task(seed_chromadb_if_empty())` launched at startup
+
+**`obs-intelligence/app/obs_intelligence/cold_start_seeder.py`** — ChromaDB cold-start seeder
+
+- 10 synthetic incident templates (5 compute + 5 storage) covering all major scenario IDs
+- Only seeds when `knowledge_entries_total < CHROMA_SEED_MIN_ENTRIES` (default 5)
+- Each entry embedded + upserted via `local_llm_enricher.store_incident_resolution()` with `validation_status="corroborated"` and `provider="synthetic_seed"`
+- 0.5s inter-call delay; all errors caught as warnings (never blocks startup)
+
+**`obs-intelligence/finetune/`** — LoRA fine-tuning pipeline (opt-in)
+
+| File | Purpose |
+|---|---|
+| `export_training_data.py` | Reads `learning.db` → chat-format JSONL (`train.jsonl` + `eval.jsonl`); quality-scores rows (confirmed verdict + resolved outcome = highest quality) |
+| `train_lora.py` | Fine-tunes Qwen2.5 with PEFT LoRA (r=8, alpha=16); saves adapter to `/output/lora_adapter/`; writes Ollama `Modelfile` |
+| `Dockerfile` | Minimal Python 3.11 image with torch + transformers + peft + trl |
+| `requirements.txt` | Fine-tune-only deps (not part of the main image) |
+| `README.md` | Step-by-step guide: export → train → merge → GGUF → `ollama create` → `LOCAL_LLM_MODEL` swap |
+
+Run the pipeline with:
+```bash
+docker compose --profile finetune run --rm finetuner python export_training_data.py
+docker compose --profile finetune run --rm finetuner python train_lora.py --use-4bit
+```
+
+---
+
 ## What Is Still To Add - to follow
 
 ### Phase 13 — Dashboard Enhancements
@@ -404,10 +455,10 @@ Closes the model learning cycle: every recorded remediation outcome — and ever
 |---|---|---|
 | ~~**Multi-agent correlation**~~ | ~~When compute and storage alerts fire simultaneously, detect cross-domain cascading failures~~ | ✅ Done (v11.0.0) |
 | ~~**SREAssessment feedback loop**~~ | ~~Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite)~~ | ✅ Done (v12.0.0) |
-| **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts | Medium |
-| **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
-| **ChromaDB cold-start seeding** | Pre-seed the knowledge store with synthetic past incidents so local validation works on day one | Medium |
-| **qwen3.5 fine-tuning** | Fine-tune a LoRA adapter on recorded incident outcomes to improve corroboration accuracy over time | High |
+| ~~**Recurrence counter persistence**~~ | ~~`recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts~~ | ✅ Done (v13.0.0) |
+| ~~**Persistent intelligence state**~~ | ~~Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts~~ | ✅ Done (v13.0.0) |
+| ~~**ChromaDB cold-start seeding**~~ | ~~Pre-seed the knowledge store with synthetic past incidents so local validation works on day one~~ | ✅ Done (v13.0.0) |
+| ~~**qwen3.5 fine-tuning**~~ | ~~Fine-tune a LoRA adapter on recorded incident outcomes to improve corroboration accuracy over time~~ | ✅ Done (v13.0.0) |
 
 ### Phase 13 — Integrations & Hardening
 | Item | Description | Effort |
@@ -606,6 +657,7 @@ See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
 
 | Version | Highlights |
 |---|---|
+| **v13.0.0** | Persistence + cold-start hardening — `StateStore` SQLite for `current_intelligence` + `recurrence_count`; 10-entry ChromaDB cold-start seeder; LoRA fine-tuning `finetuner` Docker service (`--profile finetune`) |
 | **v12.0.0** | SREAssessment RL-lite feedback loop — exponential decay, dynamic evidence tiers, outcome normalisation, validation signals, `feedback-stats` API, Streamlit learning panel |
 | **v11.0.0** | Multi-agent cross-domain correlation engine (`CrossDomainCorrelator`) + unified `SREAssessment` + agent signals + Streamlit cross-domain panel + xyOps ticket comments |
 | **v10.0.0** | Streamlit Command Center (7 tabs) + Agent Mesh vis.js topology + qwen3.5 LLM + compute-agent DB fallback fix |

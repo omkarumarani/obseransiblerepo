@@ -1,0 +1,27 @@
+# obs-intelligence/finetune/requirements.txt
+# Fine-tuning dependencies for the LoRA adapter training pipeline.
+# These are intentionally NOT part of the main obs-intelligence image
+# (they add ~4 GB of GPU libraries that the inference service doesn't need).
+
+# Deep learning runtime — CPU build used inside the container;
+# the `finetuner` service in docker-compose.yml should be run on a
+# GPU-enabled host with the NVIDIA Docker runtime for reasonable speed.
+torch>=2.2.0,<3.0.0
+
+# HuggingFace ecosystem
+transformers>=4.40.0
+datasets>=2.19.0
+accelerate>=0.29.0
+
+# Parameter-Efficient Fine-Tuning (LoRA)
+peft>=0.10.0
+
+# SFT (Supervised Fine-Tuning) trainer with chat-format support
+trl>=0.8.6
+
+# Optional: 4-bit and 8-bit quantisation for reduced VRAM usage.
+# Comment out if running on CPU-only or VRAM >= 24 GB.
+bitsandbytes>=0.43.0
+
+# Progress display
+tqdm>=4.66.0

@@ -32,6 +32,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from obs_intelligence.anomaly_detector import detect_anomalies
 from obs_intelligence.forecaster import run_forecasts
+from obs_intelligence.state_store import StateStore
 from obs_intelligence.metrics_publisher import (
     obs_intelligence_analysis_loop_duration_seconds,
     obs_intelligence_analysis_loop_runs_total,
@@ -44,15 +45,13 @@ from obs_intelligence.metrics_publisher import (
 
 logger = logging.getLogger("obs-intelligence.background")
 
+# ── Persistent state store (recurrence counters + intelligence snapshot) ─────
+_state_store = StateStore()
+
 # ── Shared state: written by background loops, read by GET /intelligence/current
-current_intelligence: dict[str, Any] = {
-    "anomalies": [],
-    "forecasts": [],
-    "last_analysis_at": None,
-    "last_forecast_at": None,
-    "analysis_loop_count": 0,
-    "forecast_loop_count": 0,
-}
+# Initialised from the persisted snapshot so the dashboard is never blank
+# after a restart, even before the first analysis loop completes.
+current_intelligence: dict[str, Any] = _state_store.load_intelligence()
 
 _scheduler: AsyncIOScheduler | None = None
 _http: httpx.AsyncClient | None = None
@@ -110,6 +109,9 @@ async def run_analysis_loop() -> None:
         current_intelligence["last_analysis_at"] = datetime.now(timezone.utc).isoformat()
         current_intelligence["analysis_loop_count"] += 1
 
+        # Persist snapshot so state survives obs-intelligence restarts
+        _state_store.save_intelligence(current_intelligence)
+
         elapsed = time.perf_counter() - start
         obs_intelligence_analysis_loop_duration_seconds.observe(elapsed)
         obs_intelligence_analysis_loop_runs_total.labels(status="success").inc()
@@ -163,6 +165,9 @@ async def run_forecasting() -> None:
         ]
         current_intelligence["last_forecast_at"] = datetime.now(timezone.utc).isoformat()
         current_intelligence["forecast_loop_count"] += 1
+
+        # Persist snapshot so state survives obs-intelligence restarts
+        _state_store.save_intelligence(current_intelligence)
 
         obs_intelligence_forecast_loop_runs_total.labels(status="success").inc()
         logger.info(
@@ -309,6 +314,13 @@ async def _dispatch_predictive_alerts(all_signals: list) -> None:
 # Scheduler lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
 
+async def run_state_cleanup() -> None:
+    """Hourly job: prune stale alert_recurrence rows from StateStore."""
+    deleted = _state_store.cleanup_old_firings()
+    if deleted:
+        logger.debug("State cleanup: pruned %d old recurrence rows", deleted)
+
+
 def start_scheduler(http_client: httpx.AsyncClient) -> None:
     """Create and start the APScheduler with both background jobs."""
     global _scheduler, _http
@@ -322,8 +334,12 @@ def start_scheduler(http_client: httpx.AsyncClient) -> None:
         run_forecasting, "interval", minutes=5, id="forecast_loop",
         max_instances=1, misfire_grace_time=60,
     )
+    _scheduler.add_job(
+        run_state_cleanup, "interval", hours=1, id="state_cleanup",
+        max_instances=1, misfire_grace_time=300,
+    )
     _scheduler.start()
-    logger.info("Background scheduler started: analysis=60s forecast=5min")
+    logger.info("Background scheduler started: analysis=60s forecast=5min state_cleanup=1h")
 
 
 def stop_scheduler() -> None:

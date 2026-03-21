@@ -1317,6 +1317,42 @@ services:
       - obs-net
     restart: unless-stopped
 
+  # ──────────────────────────────────────────────────────────
+  # LoRA Fine-Tuner  — Phase 13: qwen3.5 domain fine-tuning
+  #
+  # Opt-in service (not started by default).  Activate with:
+  #   docker compose --profile finetune run --rm finetuner \
+  #       python export_training_data.py
+  #   docker compose --profile finetune run --rm finetuner \
+  #       python train_lora.py --use-4bit
+  #
+  # Reads obs-intelligence SQLite stores from the shared data volume.
+  # Writes the LoRA adapter + Ollama Modelfile to ./obs-intelligence/finetune/output/
+  # See obs-intelligence/finetune/README.md for the full guide.
+  # ──────────────────────────────────────────────────────────
+  finetuner:
+    build:
+      context: ./obs-intelligence/finetune
+      dockerfile: Dockerfile
+    container_name: finetuner
+    profiles:
+      - finetune
+    volumes:
+      - obs-intelligence-data:/data:ro           # read-only access to SQLite stores
+      - ./obs-intelligence/finetune/output:/output  # adapter + Modelfile output
+    environment:
+      DB_DIR:        /data
+      OUTPUT_DIR:    /output
+      BASE_MODEL:    Qwen/Qwen2.5-7B-Instruct
+      LORA_R:        "8"
+      LORA_ALPHA:    "16"
+      TRAIN_EPOCHS:  "3"
+      BATCH_SIZE:    "4"
+      USE_4BIT:      "true"
+      LEARNING_RATE: "2e-4"
+    networks:
+      - obs-net
+
 volumes:
   prometheus-data:
     driver: local

@@ -26,8 +26,9 @@ from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from .background import current_intelligence, start_scheduler, stop_scheduler
+from .background import current_intelligence, start_scheduler, stop_scheduler, _state_store
 from .telemetry import bootstrap
+from obs_intelligence.cold_start_seeder import seed_chromadb_if_empty
 from obs_intelligence.learning_store import LearningStore
 from obs_intelligence.local_llm_enricher import local_llm_enricher
 from obs_intelligence.outcome_store import OutcomeStore
@@ -61,6 +62,8 @@ async def lifespan(app: FastAPI):
     global _http
     _http = httpx.AsyncClient()
     start_scheduler(_http)
+    # Seed ChromaDB with synthetic past incidents on day one (idempotent)
+    asyncio.create_task(seed_chromadb_if_empty())
     logger.info("Obs-intelligence engine started (port 9100)")
     yield
     stop_scheduler()
@@ -581,6 +584,23 @@ async def alertmanager_webhook(body: dict) -> dict:
             status=alert_status,
             severity=severity,
         ).inc()
+
+        # Persist and retrieve the recurrence count for this alert.
+        # The count drives recurring_failure_signature scenario (human_only
+        # when >= 3 firings within the recurrence window).
+        if alert_status == "firing":
+            recurrence = _state_store.record_alert_fired(alert_name)
+            if recurrence >= 3:
+                logger.warning(
+                    "Alert recurrence threshold reached  alert=%s  count=%d  "
+                    "(recurring_failure_signature scenario may activate)",
+                    alert_name, recurrence,
+                )
+            else:
+                logger.debug(
+                    "Alert recurrence updated  alert=%s  count=%d",
+                    alert_name, recurrence,
+                )
 
         logger.info(
             "Alertmanager alert received  alert=%s  status=%s  severity=%s  "
