@@ -58,7 +58,7 @@ AI_ENABLED: bool = _USE_OPENAI or _USE_CLAUDE
 
 # ── Local LLM (Ollama) — secondary fallback ────────────────────────────────────
 LOCAL_LLM_URL: str  = os.getenv("LOCAL_LLM_URL",   "http://local-llm:11434")
-LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
+LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "qwen3.5")
 LOCAL_LLM_ENABLED: bool = os.getenv("LOCAL_LLM_ENABLED", "false").lower() == "true"
 # Ollama exposes an OpenAI-compatible endpoint at /v1/chat/completions
 _LOCAL_LLM_URL = f"{LOCAL_LLM_URL.rstrip('/')}/v1/chat/completions"

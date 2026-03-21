@@ -305,7 +305,7 @@ async def validate_external_analysis(body: dict) -> dict:
         "suggested_adjustment": local_val.suggested_adjustment if local_val else "",
         "top_similarity":       local_val.top_similarity  if local_val else 0.0,
         "similar_count":        local_val.similar_count   if local_val else 0,
-        "local_model":          os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b"),
+        "local_model":          os.getenv("LOCAL_LLM_MODEL", "qwen3.5"),
         "completed":            local_val is not None,
     }
     return {

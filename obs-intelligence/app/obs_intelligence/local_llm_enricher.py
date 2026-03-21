@@ -10,7 +10,7 @@ Architecture
   After the external result is available, this module:
     1. Queries ChromaDB for the top-K most similar historical incidents
        (using nomic-embed-text embeddings via Ollama).
-    2. Asks the local LLM (llama3.2:3b) whether the external result is
+    2. Asks the local LLM (qwen3.5) whether the external result is
        corroborated, weakly supported, or divergent from history.
     3. Stores the incident + validation metadata in ChromaDB for future
        similarity retrieval.
@@ -29,7 +29,7 @@ Environment variables
 ─────────────────────
   CHROMA_URL              ChromaDB server URL    (default: http://knowledge-store:8000)
   LOCAL_LLM_URL           Ollama server URL      (default: http://local-llm:11434)
-  LOCAL_LLM_MODEL         Ollama model name      (default: llama3.2:3b)
+  LOCAL_LLM_MODEL         Ollama model name      (default: qwen3.5)
   LOCAL_LLM_ENABLED       true/false             (default: true)
   LOCAL_LLM_MIN_SIMILARITY  cosine sim threshold (default: 0.82)
   LOCAL_LLM_TOP_K         max similar entries    (default: 5)
@@ -51,7 +51,7 @@ logger = logging.getLogger("obs_intelligence.local_llm_enricher")
 
 _CHROMA_URL          = os.getenv("CHROMA_URL",       "http://knowledge-store:8000")
 _LOCAL_LLM_URL       = os.getenv("LOCAL_LLM_URL",    "http://local-llm:11434")
-_LOCAL_LLM_MODEL     = os.getenv("LOCAL_LLM_MODEL",  "llama3.2:3b")
+_LOCAL_LLM_MODEL     = os.getenv("LOCAL_LLM_MODEL",  "qwen3.5")
 _LOCAL_LLM_ENABLED   = os.getenv("LOCAL_LLM_ENABLED", "true").lower() == "true"
 _LOCAL_LLM_MIN_SIM   = float(os.getenv("LOCAL_LLM_MIN_SIMILARITY", "0.82"))
 _LOCAL_LLM_TOP_K     = int(os.getenv("LOCAL_LLM_TOP_K", "5"))

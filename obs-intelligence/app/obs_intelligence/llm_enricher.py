@@ -339,7 +339,7 @@ async def enrich(
         enrichment.local_similar_count       = local_validation.similar_count
 
     enrichment.local_similar_count = enrichment.local_similar_count or len(similar)
-    enrichment.local_model = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
+    enrichment.local_model = os.getenv("LOCAL_LLM_MODEL", "qwen3.5")
 
     if local_validation and local_validation.validation_status == "divergent":
         logger.warning(

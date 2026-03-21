@@ -152,7 +152,7 @@ REQUIRE_APPROVAL: bool = os.getenv("REQUIRE_APPROVAL", "true").lower() != "false
 # Only send to approval gate if severity >= this value
 APPROVAL_SEVERITY_THRESHOLD: set[str] = {"warning", "critical"}
 OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
-LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
+LOCAL_LLM_MODEL: str = os.getenv("LOCAL_LLM_MODEL", "qwen3.5")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

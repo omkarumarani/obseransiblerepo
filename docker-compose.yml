@@ -727,7 +727,7 @@ services:
       # ── Block F: Local LLM + ChromaDB ─────────────────────────
       LOCAL_LLM_URL: "http://local-llm:11434"
       CHROMA_URL: "http://knowledge-store:8000"
-      LOCAL_LLM_MODEL: "llama3.2:3b"
+      LOCAL_LLM_MODEL: "qwen3.5"   # model name to use when calling the local LLM API
       LOCAL_LLM_ENABLED: "true"
 
       # ── Gitea git integration ────────────────────────────────
@@ -1017,7 +1017,7 @@ services:
       # ── Block F: Local LLM + ChromaDB ─────────────────────────
       LOCAL_LLM_URL: "http://local-llm:11434"
       CHROMA_URL: "http://knowledge-store:8000"
-      LOCAL_LLM_MODEL: "llama3.2:3b"
+      LOCAL_LLM_MODEL: "qwen3.5"
       LOCAL_LLM_ENABLED: "true"
 
       # ── Workflow step visibility ───────────────────────────
@@ -1100,7 +1100,7 @@ services:
       # ── Block F: Local LLM + ChromaDB knowledge store ─────────────────────
       LOCAL_LLM_URL: "http://local-llm:11434"
       CHROMA_URL: "http://knowledge-store:8000"
-      LOCAL_LLM_MODEL: "llama3.2:3b"
+      LOCAL_LLM_MODEL: "qwen3.5"
       LOCAL_LLM_ENABLED: "true"
       LOCAL_LLM_MIN_SIMILARITY: "0.82"
       LOCAL_LLM_TOP_K: "5"
@@ -1132,7 +1132,7 @@ services:
   # ──────────────────────────────────────────────────────────
   # Local LLM (Ollama)  — Block F: local validator + embedder
   #
-  # Hosts llama3.2:3b for incident corroboration and nomic-embed-text
+  # Hosts qwen3.5 for incident corroboration and nomic-embed-text
   # for ChromaDB vector embeddings.  Both models are pulled on first
   # startup (~2-3 GB).  Subsequent starts reuse the ollama-data volume.
   #
@@ -1155,7 +1155,7 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
     entrypoint: ["/bin/sh", "-c",
-      "ollama serve & sleep 5 && ollama pull llama3.2:3b && ollama pull nomic-embed-text && wait"]
+      "ollama serve & sleep 5 && ollama pull qwen3.5 && ollama pull nomic-embed-text && wait"]
     restart: unless-stopped
     networks:
       - obs-net
@@ -1274,85 +1274,45 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────
-  # AIOps UI (Production Build)
+  # AIOps Command Center (Streamlit Dashboard)
   #
-  # Nginx serving the production-optimized React build.
-  # This is the PRODUCTION entry point for the Command Center UI.
-  # The browser accesses this, and it proxies API calls to ui-backend:9005.
+  # Python Streamlit dashboard replacing the React + Nginx stack.
+  # Provides real-time visibility over the full AIOps pipeline:
+  #   Alertmanager → compute-agent → xyOps → Gitea → ansible-runner
   #
-  # Why separate from command-center?
-  # ──────────────────────────────────
-  # The existing command-center service runs a dev server (Vite/webpack-dev-server).
-  # This service serves the production build for performance and proper
-  # HTTP caching headers.
-  #
-  # Nginx configuration:
-  # ────────────────────
-  #   - Serve static files from /usr/share/nginx/html (React build artifacts)
-  #   - Proxy /api/* requests to ui-backend:9005
-  #   - Enable gzip compression
-  #   - Set cache headers for assets
+  # Tabs:
+  #   📊 Overview          — KPIs, service health, activity feed
+  #   🔴 Live Pipeline     — 6-agent progress, AI analysis, trust score
+  #   ⏳ Pending Approvals — approval queue, Gitea PRs, Approve/Reject
+  #   ✅ Workflow Outcomes  — per-run E2E results and charts
+  #   📜 Pipeline History  — filterable full history with drill-down
+  #   🤖 Autonomy & Trust  — per-service tiers, trust ladder, decision pie
   #
   # Ports
   # ─────
-  #   3005  AIOps UI  http://localhost:3005
+  #   3500  Streamlit UI  http://localhost:3500
   # ──────────────────────────────────────────────────────────
-  aiops-ui:
-    image: nginx:1.25-alpine
-    container_name: aiops-ui
-    hostname: aiops-ui
-    volumes:
-      - ./command-center/dist:/usr/share/nginx/html:ro
-      - ./aiops-ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    ports:
-      - "3005:80"    # AIOps UI  http://localhost:3005
-    depends_on:
-      - ui-backend
-    networks:
-      - obs-net
-    restart: unless-stopped
-
-  # ──────────────────────────────────────────────────────────
-  # AIOps Command Center (Development Server)
-  #
-  # React + TypeScript single-page application for real-time
-  # agent workflow visualization with playback capability.
-  #
-  # Features:
-  #   - Live pipeline view (horizontal node graph with React Flow)
-  #   - Agent status color-coding (idle/running/success/failed/skipped)
-  #   - Click agent → opens side drawer with full JSON output
-  #   - Incident dashboard (risk score, scenario match, autonomy decision)
-  #   - Trust score progress bar ("X / Y approvals to graduate")
-  #   - Real-time polling (3s interval) OR WebSocket
-  #   - Session selector (switch between active incidents)
-  #
-  # API Integration:
-  #   All requests proxied via Vite to ui-backend:9005
-  #     GET /api/pipeline/history
-  #     GET /api/pipeline/session/{id}
-  #     GET /api/scenarios
-  #     GET /api/autonomy/status
-  #
-  # Ports
-  # ─────
-  #   3500  Command Center UI (dev)  http://localhost:3500
-  #
-  # Note: This is the DEVELOPMENT server. For production, use aiops-ui
-  #       service which serves the optimized build via Nginx.
-  # ──────────────────────────────────────────────────────────
-  command-center:
+  streamlit-dashboard:
     build:
-      context: ./command-center
+      context: ./streamlit-dashboard
       dockerfile: Dockerfile
-    container_name: command-center
-    hostname: command-center
+    container_name: streamlit-dashboard
+    hostname: streamlit-dashboard
     environment:
-      VITE_API_BASE_URL: "http://ui-backend:9005"
+      COMPUTE_AGENT_URL:    "http://compute-agent:9000"
+      STORAGE_AGENT_URL:    "http://storage-agent:9001"
+      OBS_INTELLIGENCE_URL: "http://obs-intelligence:9100"
+      GITEA_URL:            "http://gitea:3000"
+      GITEA_ADMIN_USER:     "aiops"
+      GITEA_ADMIN_PASS:     "Aiops1234!"
+      GITEA_ORG:            "aiops-org"
+      GITEA_REPO:           "ansible-playbooks"
+      XYOPS_URL:            "http://xyops:5522"
+      POLL_INTERVAL_SECONDS: "5"
     ports:
-      - "3500:3000"    # Command Center UI (dev)  http://localhost:3500
+      - "3500:8501"    # Streamlit UI  http://localhost:3500
     depends_on:
-      - ui-backend
+      - compute-agent
     networks:
       - obs-net
     restart: unless-stopped
