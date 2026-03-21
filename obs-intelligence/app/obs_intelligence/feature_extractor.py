@@ -95,9 +95,19 @@ def _fill_compute(f: ObsFeatures, metrics: dict[str, Any]) -> None:
     f.request_rate = _safe_float(metrics.get("rps"))
     # requests per second — no unit conversion needed
 
+    f.cpu_usage = _safe_float(metrics.get("cpu_usage_pct"), scale=0.01)
+    # cpu_usage_pct is percentage (0–100) → ObsFeatures wants fraction (0.0–1.0)
+
+    f.memory_usage = _safe_float(metrics.get("memory_usage_pct"), scale=0.01)
+    # memory_usage_pct is percentage (0–100) → ObsFeatures wants fraction (0.0–1.0)
+
+    f.active_connections = int(_safe_float(metrics.get("active_connections")))
+
     logger.debug(
-        "Compute features  error_rate=%.4f  latency_p99=%.4f  rps=%.2f",
+        "Compute features  error_rate=%.4f  latency_p99=%.4f  rps=%.2f"
+        "  cpu=%.4f  mem=%.4f  conns=%d",
         f.error_rate, f.latency_p99, f.request_rate,
+        f.cpu_usage, f.memory_usage, f.active_connections,
     )
 
 

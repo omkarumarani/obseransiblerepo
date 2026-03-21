@@ -62,6 +62,13 @@ obs_intelligence_scenario_outcome_total = PromCounter(
     ["scenario_id", "outcome"],  # outcome: resolved | escalated | declined | timedout
 )
 
+# ── Alertmanager webhook metrics ─────────────────────────────────────────────
+obs_intelligence_webhook_alerts_total = PromCounter(
+    "obs_intelligence_webhook_alerts_total",
+    "Total Alertmanager alerts received via the /webhook endpoint",
+    ["status", "severity"],  # status: firing | resolved
+)
+
 # ── Background loop performance ───────────────────────────────────────────────
 obs_intelligence_analysis_loop_duration_seconds = PromHistogram(
     "obs_intelligence_analysis_loop_duration_seconds",
@@ -77,4 +84,21 @@ obs_intelligence_forecast_loop_runs_total = PromCounter(
     "obs_intelligence_forecast_loop_runs_total",
     "Total forecasting loop iterations completed",
     ["status"],   # success | error
+)
+
+# -- Learning layer metrics ---------------------------------------------------
+obs_intelligence_external_validation_total = PromCounter(
+    "obs_intelligence_external_validation_total",
+    "Total externally-authored analyses recorded by the learning layer",
+    ["domain", "provider", "status"],
+)
+obs_intelligence_local_validation_total = PromCounter(
+    "obs_intelligence_local_validation_total",
+    "Total local validation attempts by verdict",
+    ["domain", "verdict"],
+)
+obs_intelligence_local_validation_duration_seconds = PromHistogram(
+    "obs_intelligence_local_validation_duration_seconds",
+    "Latency of local corroboration requests",
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0],
 )

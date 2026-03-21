@@ -440,3 +440,67 @@ async def check_pr_merged(pr_number: int, http: httpx.AsyncClient) -> bool:
     except Exception as exc:
         logger.warning("check_pr_merged PR #%d failed: %s", pr_number, exc)
     return False
+
+
+async def auto_merge_pull_request(
+    pr_number: int,
+    approval_id: str,
+    http: httpx.AsyncClient,
+) -> bool:
+    """
+    Autonomously merge a Gitea PR — called by the autonomy engine when
+    a (service, action) pair has earned enough trust to bypass the manual
+    merge requirement.
+
+    Adds a comment to the PR explaining it was merged autonomously before
+    performing the actual merge, which ensures the Git history and Gitea
+    PR timeline both show WHY it was auto-merged.
+
+    Returns True on success.
+    """
+    token = _gitea_token
+    if not token or not pr_number:
+        logger.warning("auto_merge_pull_request: token or PR number missing")
+        return False
+
+    # 1. Leave audit comment on the PR so reviewers know what happened
+    comment_body = (
+        "🤖 **Autonomous Merge — AIOps Bridge**\n\n"
+        f"This PR is being merged automatically by the AIOps Autonomy Engine.\n\n"
+        f"**Approval ID:** `{approval_id}`  \n"
+        f"**Reason:** Trust threshold met for this service/action combination — "
+        "sufficient approved executions with a high enough success rate have been "
+        "recorded in the approval history to permit autonomous execution.\n\n"
+        "The associated Ansible playbook will execute immediately after merge. "
+        "Check the linked xyOps incident ticket for execution results."
+    )
+    try:
+        await http.post(
+            f"{GITEA_URL}/api/v1/repos/{GITEA_ORG}/{GITEA_REPO}/issues/{pr_number}/comments",
+            json={"body": comment_body},
+            headers={**_auth_header(token), "Content-Type": "application/json"},
+            timeout=10.0,
+        )
+    except Exception as exc:
+        logger.warning("auto_merge: could not post PR comment: %s", exc)
+
+    # 2. Merge the PR
+    resp = await http.post(
+        f"{GITEA_URL}/api/v1/repos/{GITEA_ORG}/{GITEA_REPO}/pulls/{pr_number}/merge",
+        json={
+            "Do":                  "merge",
+            "merge_message_field": (
+                f"chore(autonomy): auto-merge remediation PR\n\n"
+                f"Approval ID: {approval_id}\n"
+                f"Merged autonomously by AIOps Bridge — trust threshold met."
+            ),
+        },
+        headers={**_auth_header(token), "Content-Type": "application/json"},
+        timeout=15.0,
+    )
+    ok = resp.status_code in (200, 204)
+    logger.info(
+        "auto_merge PR #%d  ok=%s  status=%d  approval_id=%s",
+        pr_number, ok, resp.status_code, approval_id,
+    )
+    return ok

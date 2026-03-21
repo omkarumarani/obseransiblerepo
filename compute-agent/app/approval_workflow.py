@@ -34,8 +34,11 @@ Redis or a database-backed store behind the same FastAPI app.
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -44,26 +47,161 @@ import httpx
 
 from .git_client import (
     GITEA_ENABLED,
+    auto_merge_pull_request,
     check_pr_merged,
     close_pull_request,
     commit_playbook,
     create_pull_request,
     merge_pull_request,
 )
+from .approval_history import history_store
+from .tier_registry import get_service_tier
 from .xyops_client import create_approval_events
 
 logger = logging.getLogger("aiops-bridge.approval")
 
 ANSIBLE_RUNNER_URL: str = os.getenv("ANSIBLE_RUNNER_URL", "http://ansible-runner:8080")
+_OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
+
+_APR_DB = os.getenv("PIPELINE_DB_PATH", "/data/pipeline.db")
+
+
+async def _record_llm_outcome(req: "ApprovalRequest", outcome: str) -> None:
+    """
+    Best-effort POST to obs-intelligence /intelligence/record-outcome.
+
+    Updates both the SQLite outcome history and the ChromaDB entry for this
+    run_id from outcome="pending" to the final outcome.  Never blocks the
+    pipeline — all errors are silently logged at DEBUG level.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            await client.post(
+                f"{_OBS_INTELLIGENCE_URL}/intelligence/record-outcome",
+                json={
+                    "scenario_id":          req.action_type or req.alert_name,
+                    "outcome":              outcome,
+                    "run_id":               req.bridge_trace_id,
+                    "domain":               "compute",
+                    "service_name":         req.service_name,
+                    "alert_name":           req.alert_name,
+                    "action_taken":         req.action_type,
+                    "autonomy_decision":    req.status,
+                    "validation_source":    "external_llm",
+                },
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("_record_llm_outcome failed (best-effort): %s", exc)
+
+
+def _apr_conn() -> sqlite3.Connection:
+    import pathlib
+    pathlib.Path(_APR_DB).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_APR_DB)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _ensure_approval_schema() -> None:
+    with _apr_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_approvals (
+                approval_id      TEXT PRIMARY KEY,
+                session_id       TEXT,
+                service_name     TEXT,
+                action_type      TEXT,
+                ansible_playbook TEXT,
+                risk_score       REAL,
+                tier             TEXT,
+                status           TEXT DEFAULT 'pending',
+                created_at       TEXT,
+                decided_at       TEXT,
+                decided_by       TEXT
+            )
+        """)
+
+
+def _persist_approval(req: "ApprovalRequest") -> None:
+    """UPSERT the ApprovalRequest state into pending_approvals."""
+    try:
+        with _apr_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO pending_approvals
+                    (approval_id, session_id, service_name, action_type,
+                     ansible_playbook, risk_score, tier, status,
+                     created_at, decided_at, decided_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(approval_id) DO UPDATE SET
+                    status     = excluded.status,
+                    decided_at = excluded.decided_at,
+                    decided_by = excluded.decided_by
+                """,
+                (
+                    req.approval_id,
+                    req.session_id,
+                    req.service_name,
+                    req.action_type,
+                    req.ansible_playbook[:4000] if req.ansible_playbook else "",
+                    req.risk_score,
+                    req.env_tier,
+                    req.status,
+                    req.created_at,
+                    req.decided_at or None,
+                    req.decided_by or None,
+                ),
+            )
+    except Exception as exc:
+        logger.warning("_persist_approval failed: %s", exc)
+
+
+def _load_approvals_from_db() -> None:
+    """Rebuild _pending from DB rows where status='pending' and created < 48 h ago."""
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    try:
+        with _apr_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM pending_approvals
+                WHERE status = 'pending' AND created_at > ?
+                """,
+                (cutoff,),
+            ).fetchall()
+        for row in rows:
+            if row["approval_id"] in _pending:
+                continue
+            req = ApprovalRequest(
+                approval_id         = row["approval_id"],
+                session_id          = row["session_id"] or "",
+                incident_ticket_id  = "",
+                alert_name          = "",
+                service_name        = row["service_name"] or "",
+                severity            = "warning",
+                ansible_playbook    = row["ansible_playbook"] or "",
+                ansible_description = "",
+                test_plan           = [],
+                rca_summary         = "",
+                bridge_trace_id     = "",
+                created_at          = row["created_at"] or "",
+                status              = row["status"] or "pending",
+                action_type         = row["action_type"] or "",
+                env_tier            = row["tier"] or "",
+            )
+            _pending[req.approval_id] = req
+        if rows:
+            logger.info("Restored %d pending approvals from DB", len(rows))
+    except Exception as exc:
+        logger.warning("_load_approvals_from_db failed: %s", exc)
 
 # ── In-memory state ────────────────────────────────────────────────────────────
 # {approval_id: ApprovalRequest}
 _pending: dict[str, "ApprovalRequest"] = {}
 
-
 @dataclass
 class ApprovalRequest:
     approval_id: str
+    session_id: str
     incident_ticket_id: str
     alert_name: str
     service_name: str
@@ -96,6 +234,15 @@ class ApprovalRequest:
     # Pre-commit Ansible validation
     validation_passed: bool = False
     validation_result: dict = field(default_factory=dict)
+    # Autonomy engine fields (set by caller when applicable)
+    action_type: str = ""          # recommended action from scenario catalog
+    env_tier: str = ""             # tier at the time of the request
+    risk_score: float = 0.0
+    gitea_commit_sha: str = ""
+
+
+_ensure_approval_schema()
+_load_approvals_from_db()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -103,6 +250,7 @@ class ApprovalRequest:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def request_approval(
+    session_id: str,
     approval_id: str,
     incident_ticket_id: str,
     alert_name: str,
@@ -113,6 +261,9 @@ async def request_approval(
     xyops_post,   # callable: async (path, body) -> dict
     xyops_url: str,
     http: "httpx.AsyncClient | None" = None,
+    action_type: str = "",
+    env_tier: str = "",
+    risk_score: float = 0.0,
 ) -> ApprovalRequest:
     """
     Create an ApprovalRequest and open a gating ticket in xyOps.
@@ -134,6 +285,7 @@ async def request_approval(
 
     req = ApprovalRequest(
         approval_id=approval_id,
+        session_id=session_id,
         incident_ticket_id=incident_ticket_id,
         alert_name=alert_name,
         service_name=service_name,
@@ -144,9 +296,12 @@ async def request_approval(
         test_cases=test_cases,
         rca_summary=rca_summary,
         bridge_trace_id=bridge_trace_id,
+        action_type=action_type or analysis.get("recommended_action", ""),
+        env_tier=env_tier or get_service_tier(service_name).value,
+        risk_score=risk_score,
     )
     _pending[approval_id] = req
-
+    _persist_approval(req)
     # ── Step 0: Validate playbook BEFORE any git operations ───────────────────
     # Ansible code is tested first.  Only if validation passes do we commit to
     # Gitea and open a PR.  If it fails the user sees a clear explanation in the
@@ -239,7 +394,7 @@ async def request_approval(
         req.validation_passed = True
 
     # ── Step 1: Create Approve / Decline events in xyOps ─────────────────────
-    bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://aiops-bridge:9000")
+    bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://compute-agent:9000")
     try:
         approve_evt, decline_evt = await create_approval_events(
             approval_id, bridge_host, xyops_post
@@ -264,6 +419,7 @@ async def request_approval(
             )
             if not git_info.get("error"):
                 req.gitea_branch = git_info.get("branch", "")
+                req.gitea_commit_sha = git_info.get("sha", "")
                 pr_info = await create_pull_request(
                     branch=req.gitea_branch,
                     service_name=service_name,
@@ -306,6 +462,7 @@ async def request_approval(
     result = await xyops_post("/api/app/create_ticket/v1", ticket_payload)
     req.approval_ticket_id = result.get("ticket", {}).get("id", "")
     req.approval_ticket_num = result.get("ticket", {}).get("num", 0)
+    _persist_approval(req)
 
     logger.info(
         "Approval gate ticket #%s (%s) created  approval_id=%s  incident=%s",
@@ -323,6 +480,126 @@ def get_pending(approval_id: str) -> ApprovalRequest | None:
 
 def list_pending() -> list[ApprovalRequest]:
     return [r for r in _pending.values() if r.status == "pending"]
+
+
+async def execute_autonomous(
+    *,
+    session_id: str,
+    approval_id: str,
+    incident_ticket_id: str,
+    alert_name: str,
+    service_name: str,
+    severity: str,
+    analysis: dict[str, Any],
+    bridge_trace_id: str,
+    action_type: str,
+    env_tier: str,
+    risk_score: float,
+    auto_merge_pr: bool,
+    http: httpx.AsyncClient,
+    xyops_post,
+) -> dict[str, Any]:
+    """
+    Execute an Ansible playbook fully autonomously — no approval gate ticket.
+
+    Called by pipeline.py Agent 6 when the Autonomy Engine grants autonomous
+    execution.  Performs:
+      1. (Optional) commit playbook to Gitea branch + create PR
+      2. (Optional) auto-merge the PR
+      3. Run ansible-runner /run directly
+      4. Record decision + outcome in approval history
+
+    Returns a dict with execution status for the pipeline response.
+    """
+    playbook  = analysis.get("ansible_playbook", "")
+    test_cases = analysis.get("test_cases", [])
+
+    # Build a minimal ApprovalRequest to reuse _execute_playbook
+    req = ApprovalRequest(
+        approval_id=approval_id,
+        session_id=session_id,
+        incident_ticket_id=incident_ticket_id,
+        alert_name=alert_name,
+        service_name=service_name,
+        severity=severity,
+        ansible_playbook=playbook,
+        ansible_description=analysis.get("ansible_description", ""),
+        test_plan=analysis.get("test_plan", []),
+        test_cases=test_cases,
+        rca_summary=analysis.get("rca_summary", ""),
+        bridge_trace_id=bridge_trace_id,
+        action_type=action_type,
+        env_tier=env_tier,
+        risk_score=risk_score,
+    )
+    _pending[approval_id] = req
+    _persist_approval(req)
+
+    # ── Record autonomous decision in history (outcome = pending for now) ─────
+    history_store.record_decision(
+        approval_id=approval_id,
+        service_name=service_name,
+        alert_name=alert_name,
+        action_type=action_type,
+        env_tier=env_tier,
+        decided_by="autonomous",
+        decision="autonomous",
+        risk_score=risk_score,
+        notes="Autonomy engine granted execution — trust threshold met",
+    )
+
+    # ── Commit + PR + (optional) auto-merge in Gitea ─────────────────────────
+    if GITEA_ENABLED and playbook:
+        try:
+            git_info = await commit_playbook(
+                approval_id=approval_id,
+                playbook_yaml=playbook,
+                service_name=service_name,
+                alert_name=alert_name,
+                http=http,
+            )
+            if not git_info.get("error"):
+                req.gitea_branch = git_info.get("branch", "")
+                req.gitea_commit_sha = git_info.get("sha", "")
+                pr_info = await create_pull_request(
+                    branch=req.gitea_branch,
+                    service_name=service_name,
+                    alert_name=alert_name,
+                    rca_summary=req.rca_summary,
+                    approval_id=approval_id,
+                    http=http,
+                )
+                req.gitea_pr_url = pr_info.get("pr_url", "")
+                req.gitea_pr_num = pr_info.get("pr_number", 0)
+
+                if auto_merge_pr and req.gitea_pr_num:
+                    await auto_merge_pull_request(req.gitea_pr_num, approval_id, http)
+                    logger.info(
+                        "Autonomous PR #%d auto-merged  service=%s  alert=%s",
+                        req.gitea_pr_num, service_name, alert_name,
+                    )
+        except Exception as exc:
+            logger.warning("Gitea autonomous commit/PR/merge failed (non-fatal): %s", exc)
+
+    # ── Execute playbook ──────────────────────────────────────────────────────
+    req.status = "approved"
+    _persist_approval(req)
+    _sync_pipeline_session(req, stage="autonomous_executing", autonomy_decision="AUTONOMOUS")
+    asyncio.create_task(
+        _execute_playbook(req=req, http=http, xyops_post=xyops_post)
+    )
+
+    logger.info(
+        "Autonomous execution started  approval_id=%s  service=%s  alert=%s  tier=%s",
+        approval_id, service_name, alert_name, env_tier,
+    )
+    return {
+        "status": "autonomous",
+        "approval_id": approval_id,
+        "gitea_pr_url": req.gitea_pr_url,
+        "gitea_pr_num": req.gitea_pr_num,
+        "message": "Autonomous execution started — playbook running without human approval",
+    }
 
 
 async def process_decision(
@@ -354,6 +631,18 @@ async def process_decision(
         logger.info(
             "Approval %s DECLINED by %s  alert=%s", approval_id, decided_by, req.alert_name
         )
+        # Record the human decline in history
+        history_store.record_decision(
+            approval_id=approval_id,
+            service_name=req.service_name,
+            alert_name=req.alert_name,
+            action_type=req.action_type,
+            env_tier=req.env_tier,
+            decided_by=decided_by,
+            decision="declined",
+            risk_score=0.0,
+            notes=notes or "",
+        )
         # Close the Gitea PR so the branch is cleanly rejected
         if req.gitea_pr_num:
             try:
@@ -379,13 +668,30 @@ async def process_decision(
 
     # ── Approved → check PR is merged, then trigger Ansible execution ─────────
     req.status = "approved"
+    _persist_approval(req)
+    _sync_pipeline_session(req, stage="approved", autonomy_decision="APPROVAL_GATED")
     logger.info(
         "Approval %s APPROVED by %s  alert=%s — checking PR merge status",
         approval_id, decided_by, req.alert_name,
     )
 
-    # If a PR exists, the user must merge it themselves before we execute.
-    # The PR being on `main` is the authorisation record in Git history.
+    # Record the human approval in history (outcome updated after execution)
+    history_store.record_decision(
+        approval_id=approval_id,
+        service_name=req.service_name,
+        alert_name=req.alert_name,
+        action_type=req.action_type,
+        env_tier=req.env_tier,
+        decided_by=decided_by,
+        decision="approved",
+        risk_score=0.0,
+        notes=notes or "",
+    )
+
+    # If a PR exists, check merge status.
+    # For tiers that allow auto_merge on approval (staging/dev/sandbox) and the
+    # PR is still open, the agent merges it automatically so the user only needs
+    # to click "Approve" once without a separate trip to Gitea.
     if req.gitea_pr_num:
         try:
             is_merged = await check_pr_merged(req.gitea_pr_num, http)
@@ -394,28 +700,71 @@ async def process_decision(
             logger.warning("Could not check PR merge status: %s", exc)
 
         if not is_merged:
-            # Reset to pending and remind the user
-            req.status = "pending"
-            pr_remind = (
-                f"## ⚠️ PR Not Yet Merged\n\n"
-                f"You clicked **Approve** but PR [#{req.gitea_pr_num}]({req.gitea_pr_url}) "
-                f"has **not been merged** yet.\n\n"
-                f"**Please complete both steps in order:**\n\n"
-                f"1. 🔗 [Merge PR #{req.gitea_pr_num}]({req.gitea_pr_url}) on Gitea "
-                f"(review the YAML diff, then click 'Merge Pull Request')\n"
-                f"2. ✅ Return here and click **Approve Remediation** again\n\n"
-                f"The playbook will execute automatically once both conditions are met."
-            )
-            await _update_approval_ticket(req=req, comment=pr_remind, xyops_post=xyops_post)
-            logger.info(
-                "Approval %s reset to pending — PR #%d not merged yet",
-                approval_id, req.gitea_pr_num,
-            )
-            return {"status": "pending_pr_merge", "approval_id": approval_id,
-                    "message": f"Please merge PR #{req.gitea_pr_num} first, then re-approve"}
+            # Determine if this tier/policy allows auto-merge on human approval
+            from .tier_registry import get_service_tier, get_tier_policy
+            tier = get_service_tier(req.service_name)
+            policy = get_tier_policy(tier)
 
-        # PR is already merged by the user — proceed straight to execution
-        logger.info("PR #%d already merged — proceeding to Ansible execution", req.gitea_pr_num)
+            if policy.auto_merge_pr:
+                # Automatically merge the PR on behalf of the approving human
+                logger.info(
+                    "Tier '%s' allows auto_merge — merging PR #%d automatically  approval_id=%s",
+                    tier.value, req.gitea_pr_num, approval_id,
+                )
+                merged = await auto_merge_pull_request(req.gitea_pr_num, approval_id, http)
+                if not merged:
+                    logger.warning(
+                        "Auto-merge of PR #%d failed — falling back to manual merge reminder",
+                        req.gitea_pr_num,
+                    )
+                    req.status = "pending"
+                    _persist_approval(req)
+                    pr_remind = (
+                        f"## ⚠️ Auto-Merge Failed\n\n"
+                        f"The agent attempted to auto-merge PR "
+                        f"[#{req.gitea_pr_num}]({req.gitea_pr_url}) "
+                        f"but the merge was rejected by Gitea.\n\n"
+                        f"**Please complete both steps in order:**\n\n"
+                        f"1. 🔗 [Merge PR #{req.gitea_pr_num}]({req.gitea_pr_url}) manually on Gitea\n"
+                        f"2. ✅ Click **Approve Remediation** again\n\n"
+                        f"The playbook will execute automatically once both conditions are met."
+                    )
+                    await _update_approval_ticket(req=req, comment=pr_remind, xyops_post=xyops_post)
+                    return {
+                        "status": "pending_pr_merge",
+                        "approval_id": approval_id,
+                        "message": f"Auto-merge failed — please merge PR #{req.gitea_pr_num} manually then re-approve",
+                    }
+                logger.info("PR #%d auto-merged — proceeding to Ansible execution", req.gitea_pr_num)
+            else:
+                # Production tier: human must merge PR manually
+                req.status = "pending"
+                _persist_approval(req)
+                pr_remind = (
+                    f"## ⚠️ PR Not Yet Merged\n\n"
+                    f"You clicked **Approve** but PR [#{req.gitea_pr_num}]({req.gitea_pr_url}) "
+                    f"has **not been merged** yet.\n\n"
+                    f"**Please complete both steps in order:**\n\n"
+                    f"1. 🔗 [Merge PR #{req.gitea_pr_num}]({req.gitea_pr_url}) on Gitea "
+                    f"(review the YAML diff, then click 'Merge Pull Request')\n"
+                    f"2. ✅ Return here and click **Approve Remediation** again\n\n"
+                    f"The playbook will execute automatically once both conditions are met.\n\n"
+                    f"> **Note:** Service tier is `{tier.value}` — "
+                    f"manual PR review is required before execution on this tier."
+                )
+                await _update_approval_ticket(req=req, comment=pr_remind, xyops_post=xyops_post)
+                logger.info(
+                    "Approval %s reset to pending — PR #%d not merged yet (tier=%s, auto_merge=False)",
+                    approval_id, req.gitea_pr_num, tier.value,
+                )
+                return {
+                    "status": "pending_pr_merge",
+                    "approval_id": approval_id,
+                    "message": f"Please merge PR #{req.gitea_pr_num} first, then re-approve",
+                }
+        else:
+            # PR is already merged by the user — proceed straight to execution
+            logger.info("PR #%d already merged — proceeding to Ansible execution", req.gitea_pr_num)
 
     approve_msg = (
         f"## ✅ Remediation Approved\n\n"
@@ -477,6 +826,7 @@ async def _execute_playbook(
             result = resp.json()
             req.execution_result = result
             req.status = "executed"
+            _persist_approval(req)
 
             rc = result.get("return_code", -1)
             stdout = result.get("stdout", "")[:3000]
@@ -513,6 +863,7 @@ async def _execute_playbook(
                 )
         else:
             req.status = "executed"
+            _persist_approval(req)
             comment = (
                 f"## ❌ Ansible Runner Error\n\n"
                 f"ansible-runner returned HTTP {resp.status_code}\n\n"
@@ -520,6 +871,7 @@ async def _execute_playbook(
             )
     except Exception as exc:
         req.status = "executed"
+        _persist_approval(req)
         comment = (
             f"## ❌ Ansible Runner Unreachable\n\n"
             f"Could not contact ansible-runner at `{ANSIBLE_RUNNER_URL}`\n\n"
@@ -535,10 +887,74 @@ async def _execute_playbook(
     if rc == 0:
         outcome_status = "executed"
         outcome_msg = "Ansible playbook executed successfully — service should be recovering"
+        history_store.update_outcome(req.approval_id, "success")
+        _sync_pipeline_session(req, stage="complete", outcome="success", complete=True)
+        asyncio.create_task(_record_llm_outcome(req, "success"))
     else:
         outcome_status = "failed"
         outcome_msg = f"Ansible playbook FAILED (rc={rc}) — manual intervention required"
+        history_store.update_outcome(req.approval_id, "failure")
+        _sync_pipeline_session(req, stage="complete", outcome="failure", complete=True)
+        asyncio.create_task(_record_llm_outcome(req, "failure"))
+    await _append_change_audit_record(req=req, outcome=outcome_status, xyops_post=xyops_post)
     await _post_to_incident(req=req, status=outcome_status, message=outcome_msg, xyops_post=xyops_post)
+
+
+def _sync_pipeline_session(
+    req: ApprovalRequest,
+    *,
+    stage: str | None = None,
+    autonomy_decision: str | None = None,
+    outcome: str | None = None,
+    complete: bool = False,
+) -> None:
+    if not req.session_id:
+        return
+    try:
+        from .pipeline import update_pipeline_session_state
+
+        update_pipeline_session_state(
+            req.session_id,
+            stage=stage,
+            autonomy_decision=autonomy_decision,
+            outcome=outcome,
+            completed=complete,
+        )
+    except Exception as exc:
+        logger.warning("Could not sync pipeline session %s: %s", req.session_id, exc)
+
+
+async def _append_change_audit_record(
+    req: ApprovalRequest,
+    *,
+    outcome: str,
+    xyops_post,
+) -> None:
+    if not req.incident_ticket_id:
+        return
+    validated_at = req.validation_result.get("validated_at") or req.created_at
+    decided_at = req.decided_at or req.created_at
+    executed_at = datetime.now(timezone.utc).isoformat()
+    playbook_sha256 = hashlib.sha256(req.ansible_playbook.encode("utf-8")).hexdigest()
+    audit_block = (
+        "═══════════════════ CHANGE AUDIT RECORD ═══════════════════\n"
+        f"RFC ID:           {req.approval_id}\n"
+        f"Change Request:   {req.action_type} on {req.service_name}\n"
+        "Requested by:     AIOps Autonomous Engine\n"
+        f"Validation:       Ansible dry-run {'PASSED' if req.validation_passed else 'FAILED'} at {validated_at}\n"
+        f"Evidence:         Git commit {req.gitea_commit_sha or 'n/a'} in branch {req.gitea_branch or 'n/a'}\n"
+        f"PR link:          {req.gitea_pr_url or 'n/a'}\n"
+        f"Approved by:      {req.decided_by or 'autonomous'} at {decided_at}\n"
+        f"Executed at:      {executed_at}\n"
+        f"OpenTelemetry:    trace_id={req.bridge_trace_id}\n"
+        f"Outcome:          {outcome}\n"
+        f"Playbook hash:    SHA256:{playbook_sha256}\n"
+        "════════════════════════════════════════════════════════════"
+    )
+    await xyops_post(
+        "/api/app/add_ticket_change/v1",
+        {"id": req.incident_ticket_id, "change": {"type": "comment", "body": audit_block}},
+    )
 
 
 async def _update_approval_ticket(
@@ -583,7 +999,7 @@ def _build_approval_body(
     xyops_url: str,
     approval_id: str,
 ) -> str:
-    bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://aiops-bridge:9000")
+    bridge_host = os.getenv("BRIDGE_INTERNAL_URL", "http://compute-agent:9000")
 
     body = (
         f"## 🔐 Change Approval Required\n\n"

@@ -332,8 +332,6 @@ groups:
             Metric {{ $labels.metric_name }} has a Z-score of {{ $value | humanize }}
             (threshold ±3.0), indicating statistically unusual behaviour in the
             {{ $labels.domain }} domain.
-          dashboard_url: "http://grafana:3000/d/obs-intelligence-detail"
-          runbook_url: "http://xyops:5522"
           dashboard_url: "http://grafana:3000/d/agentic-ai-overview"
           runbook_url: "http://xyops:5522"
 

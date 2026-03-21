@@ -37,3 +37,7 @@ scipy==1.14.1
 
 # Scenario definition files (YAML)
 pyyaml==6.0.2
+
+# Block F: ChromaDB vector store + Ollama Python client
+chromadb>=0.4.22
+ollama>=0.1.7

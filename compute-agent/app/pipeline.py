@@ -33,8 +33,10 @@ GET  /pipeline/session/{id}    — inspect current session state (debug)
 """
 
 import asyncio
+import json
 import logging
 import os
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -52,7 +54,7 @@ from .ai_analyst import (
     fetch_prometheus_context,
     get_notify_list,
 )
-from .approval_workflow import request_approval
+from .approval_workflow import request_approval, execute_autonomous
 from .xyops_client import TOTAL_STEPS, post_step_comment
 from obs_intelligence.feature_extractor import extract_features as _extract_features
 from obs_intelligence.scenario_correlator import (
@@ -68,6 +70,7 @@ from obs_intelligence.evidence_builder import (
 )
 from obs_intelligence.llm_enricher import enrich as _llm_enrich
 from . import autonomy_rules as _autonomy_rules
+from .autonomy_engine import check_autonomy_for_new_service
 
 logger = logging.getLogger("aiops-bridge.pipeline")
 
@@ -75,6 +78,7 @@ XYOPS_URL: str = os.getenv("XYOPS_URL", "http://xyops:5522")
 REQUIRE_APPROVAL: bool = os.getenv("REQUIRE_APPROVAL", "true").lower() != "false"
 APPROVAL_SEVERITY_THRESHOLD: set[str] = {"warning", "critical"}
 SESSION_TTL_SECONDS: int = 3600  # sessions expire after 1 hour
+_OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
 # Seconds each workflow node visibly "runs" before completing — lets you watch
 # the xyOps canvas step by step.  Set to 0 to disable.
 WORKFLOW_STEP_DELAY: int = int(os.getenv("WORKFLOW_STEP_DELAY_SECONDS", "5"))
@@ -115,13 +119,150 @@ class PipelineSession:
     approval_id: str = ""
     approval_ticket_id: str = ""
     approval_ticket_num: int = 0
+    autonomy_decision: str = "APPROVAL_GATED"
+    outcome: str = "pending"
+    completed_at: float | None = None
+    mttr_seconds: float = 0.0
 
     # Current pipeline stage (for debugging/inspection)
     stage: str = "created"
+    # Wall-clock seconds from session creation to each stage completion
+    stage_durations: dict = field(default_factory=dict)
 
 
 # {session_id: PipelineSession}
 _sessions: dict[str, PipelineSession] = {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SQLite persistence — survives container restarts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_DB_PATH = os.getenv("PIPELINE_DB_PATH", "/data/pipeline.db")
+
+
+def _db_conn() -> sqlite3.Connection:
+    import pathlib
+    pathlib.Path(_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _ensure_schema() -> None:
+    with _db_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipeline_sessions (
+                session_id        TEXT PRIMARY KEY,
+                service_name      TEXT,
+                alert_name        TEXT,
+                severity          TEXT,
+                stage             TEXT,
+                risk_score        REAL,
+                risk_level        TEXT,
+                autonomy_decision TEXT,
+                analysis_json     TEXT,
+                created_at        REAL,
+                completed_at      REAL,
+                mttr_seconds      REAL DEFAULT 0,
+                outcome           TEXT DEFAULT 'pending'
+            )
+        """)
+        cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(pipeline_sessions)").fetchall()
+        }
+        if "mttr_seconds" not in cols:
+            conn.execute(
+                "ALTER TABLE pipeline_sessions ADD COLUMN mttr_seconds REAL DEFAULT 0"
+            )
+
+
+def _persist_session(session: PipelineSession) -> None:
+    """UPSERT the current session state into pipeline_sessions."""
+    try:
+        analysis_json = json.dumps(session.analysis)
+        with _db_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO pipeline_sessions
+                    (session_id, service_name, alert_name, severity, stage,
+                     risk_score, risk_level, autonomy_decision, analysis_json,
+                     created_at, completed_at, mttr_seconds, outcome)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    stage             = excluded.stage,
+                    risk_score        = excluded.risk_score,
+                    risk_level        = excluded.risk_level,
+                    autonomy_decision = excluded.autonomy_decision,
+                    analysis_json     = excluded.analysis_json,
+                    completed_at      = excluded.completed_at,
+                    mttr_seconds      = excluded.mttr_seconds,
+                    outcome           = excluded.outcome
+                """,
+                (
+                    session.session_id,
+                    session.service_name,
+                    session.alert_name,
+                    session.severity,
+                    session.stage,
+                    session.risk_score,
+                    session.risk_level,
+                    session.autonomy_decision,
+                    analysis_json,
+                    session.created_at,
+                    session.completed_at,
+                    session.mttr_seconds,
+                    session.outcome,
+                ),
+            )
+    except Exception as exc:
+        logger.warning("_persist_session failed: %s", exc)
+
+
+def _load_sessions_from_db() -> None:
+    """Rebuild _sessions from DB rows created in the last 24 hours."""
+    cutoff = time.time() - 86400
+    try:
+        with _db_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_sessions WHERE created_at > ?", (cutoff,)
+            ).fetchall()
+        for row in rows:
+            if row["session_id"] in _sessions:
+                continue   # already in memory (shouldn't happen at import time)
+            try:
+                analysis = json.loads(row["analysis_json"] or "{}")
+            except Exception:
+                analysis = {}
+            session = PipelineSession(
+                session_id   = row["session_id"],
+                service_name = row["service_name"] or "",
+                alert_name   = row["alert_name"] or "",
+                severity     = row["severity"] or "warning",
+                summary      = analysis.get("summary", ""),
+                description  = "",
+                dashboard_url= "http://grafana:3000",
+                starts_at    = "",
+                created_at   = row["created_at"] or time.time(),
+                stage        = row["stage"] or "created",
+                risk_score   = row["risk_score"] or 0.0,
+                risk_level   = row["risk_level"] or "unknown",
+                autonomy_decision=row["autonomy_decision"] or "APPROVAL_GATED",
+                outcome      = row["outcome"] or "pending",
+                completed_at = row["completed_at"],
+                mttr_seconds = row["mttr_seconds"] or 0.0,
+                analysis     = analysis,
+            )
+            _sessions[session.session_id] = session
+        if rows:
+            logger.info("Restored %d pipeline sessions from DB", len(rows))
+    except Exception as exc:
+        logger.warning("_load_sessions_from_db failed: %s", exc)
+
+
+_ensure_schema()
+_load_sessions_from_db()
 
 
 # ── Module-level client refs — set by init_pipeline() on bridge startup ────────
@@ -169,6 +310,121 @@ def _gc_sessions() -> None:
     for k in expired:
         del _sessions[k]
         logger.info("Evicted expired pipeline session: %s", k)
+
+
+def _compute_trust_metrics(service_name: str, action_type: str = "") -> dict:
+    from .approval_history import history_store
+    from .tier_registry import get_service_tier, get_tier_policy
+
+    tier = get_service_tier(service_name)
+    policy = get_tier_policy(tier)
+    records = [r for r in history_store._records if r.service_name == service_name]
+
+    approvals_recorded = sum(1 for r in records if r.decision in ("approved", "autonomous"))
+    executed = [r for r in records if r.execution_outcome in ("success", "failure")]
+    successes = sum(1 for r in executed if r.execution_outcome == "success")
+    success_rate = (successes / len(executed)) if executed else 0.0
+    approvals_needed = max(policy.min_approvals_for_autonomy - approvals_recorded, 0)
+    success_rate_needed = policy.min_success_rate
+    if approvals_needed == 0 and success_rate >= success_rate_needed:
+        path_to_next_tier = f"Trust threshold met for {tier.value.upper()}→AUTO"
+    else:
+        path_to_next_tier = (
+            f"{approvals_needed} more approvals + {success_rate_needed:.0%} success rate "
+            f"to reach {tier.value.upper()}→AUTO"
+        )
+
+    return {
+        "approvals_recorded": approvals_recorded,
+        "success_rate": round(success_rate, 3),
+        "successful_runs": successes,
+        "executed_runs": len(executed),
+        "next_tier": {
+            "name": f"{tier.value}_auto",
+            "approvals_needed": approvals_needed,
+            "success_rate_needed": round(success_rate_needed, 2),
+        },
+        "path_to_next_tier": path_to_next_tier,
+    }
+
+
+def update_pipeline_session_state(
+    session_id: str,
+    *,
+    stage: str | None = None,
+    autonomy_decision: str | None = None,
+    outcome: str | None = None,
+    completed: bool = False,
+) -> None:
+    session = _sessions.get(session_id)
+    if session:
+        if stage:
+            session.stage = stage
+            session.stage_durations[stage] = round(time.time() - session.created_at, 2)
+        if autonomy_decision:
+            session.autonomy_decision = autonomy_decision
+        if outcome:
+            session.outcome = outcome
+        if completed:
+            session.completed_at = time.time()
+            session.mttr_seconds = round(session.completed_at - session.created_at, 1)
+        _persist_session(session)
+        return
+
+    try:
+        with _db_conn() as conn:
+            row = conn.execute(
+                "SELECT created_at, stage FROM pipeline_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return
+            created_at = row["created_at"] or time.time()
+            next_stage = stage or row["stage"] or "created"
+            next_completed_at = time.time() if completed else None
+            next_mttr = round(next_completed_at - created_at, 1) if next_completed_at else 0.0
+            updates: list[str] = []
+            params: list[Any] = []
+            if stage:
+                updates.append("stage = ?")
+                params.append(next_stage)
+            if autonomy_decision:
+                updates.append("autonomy_decision = ?")
+                params.append(autonomy_decision)
+            if outcome:
+                updates.append("outcome = ?")
+                params.append(outcome)
+            if completed:
+                updates.append("completed_at = ?")
+                updates.append("mttr_seconds = ?")
+                params.extend([next_completed_at, next_mttr])
+            if updates:
+                params.append(session_id)
+                conn.execute(
+                    f"UPDATE pipeline_sessions SET {', '.join(updates)} WHERE session_id = ?",
+                    tuple(params),
+                )
+    except Exception as exc:
+        logger.warning("update_pipeline_session_state failed: %s", exc)
+
+
+async def _notify_coordinator(session: PipelineSession) -> None:
+    """Fire-and-forget: tell obs-intelligence about this incident."""
+    try:
+        await _http.post(
+            f"{_OBS_INTELLIGENCE_URL}/intelligence/record-incident",
+            json={
+                "domain":       "compute",
+                "service_name": session.service_name,
+                "alert_name":   session.alert_name,
+                "risk_score":   session.risk_score,
+                "scenario_id":  session.analysis.get("scenario_id", ""),
+                "run_id":       session.bridge_trace_id,
+            },
+            timeout=3.0,
+        )
+    except Exception:
+        pass  # coordinator is best-effort
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -225,6 +481,7 @@ async def pipeline_start(req: StartRequest) -> dict:
         bridge_trace_id=bridge_trace_id,
     )
     _sessions[session_id] = session
+    _persist_session(session)
 
     # Create skeleton ticket immediately so subsequent agents can post comments
     skeleton_body = (
@@ -270,6 +527,8 @@ async def pipeline_start(req: StartRequest) -> dict:
     session.ticket_id = create_result.get("ticket", {}).get("id", "")
     session.ticket_num = create_result.get("ticket", {}).get("num", 0)
     session.stage = "started"
+    session.stage_durations["started"] = round(time.time() - session.created_at, 2)
+    _persist_session(session)
 
     logger.info(
         "Pipeline session started  session=%s  ticket=#%s (%s)  service=%s  alert=%s",
@@ -315,6 +574,8 @@ async def agent_logs(req: AgentRequest) -> dict:
     log_lines = session.logs.count("\n") + (1 if session.logs.strip() else 0)
     warn_count = session.logs.upper().count("WARN")
     session.stage = "logs"
+    session.stage_durations["logs"] = round(time.time() - session.created_at, 2)
+    _persist_session(session)
 
     await post_step_comment(
         session.ticket_id, 1, "done",
@@ -368,6 +629,8 @@ async def agent_metrics(req: AgentRequest) -> dict:
         m_parts.append(f"rps={session.metrics['rps']}")
     metrics_str = "  ".join(m_parts) if m_parts else "no metrics available"
     session.stage = "metrics"
+    session.stage_durations["metrics"] = round(time.time() - session.created_at, 2)
+    _persist_session(session)
 
     await post_step_comment(
         session.ticket_id, 2, "done",
@@ -497,12 +760,16 @@ async def agent_analyze(req: AgentRequest) -> dict:
             compute_agent_ai_analysis_total.labels(status="deterministic").inc()
             provider = "scenario-catalog"
         session.stage = "analyzed"
+        session.stage_durations["analyzed"] = round(time.time() - session.created_at, 2)
+        _persist_session(session)
     else:
         session.analysis = _analysis_from_recommendation(rec, risk)
         session.analysis["evidence_lines"] = ev_lines
         compute_agent_ai_analysis_total.labels(status="deterministic").inc()
         provider = "scenario-catalog"
         session.stage = "analyzed"
+        session.stage_durations["analyzed"] = round(time.time() - session.created_at, 2)
+        _persist_session(session)
 
     # ── Optional: merge pre-computed signals from obs-intelligence ──────────────
     _obs_url = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
@@ -522,6 +789,10 @@ async def agent_analyze(req: AgentRequest) -> dict:
                 )
     except Exception:
         pass  # obs-intelligence unavailable — continue without pre-computed signals
+
+    # Notify cross-domain coordinator (fire-and-forget — must not block pipeline)
+    if _http:
+        asyncio.create_task(_notify_coordinator(session))
 
     await post_step_comment(
         session.ticket_id, 3, "done",
@@ -594,6 +865,8 @@ async def agent_ticket(req: AgentRequest) -> dict:
     )
     word_count = len(ticket_body.split())
     session.stage = "ticket_enriched"
+    session.stage_durations["ticket_enriched"] = round(time.time() - session.created_at, 2)
+    _persist_session(session)
 
     await post_step_comment(
         session.ticket_id, 4, "done",
@@ -625,20 +898,23 @@ async def agent_ticket(req: AgentRequest) -> dict:
 @pipeline_router.post("/agent/approval")
 async def agent_approval(req: AgentRequest) -> dict:
     """
-    Agent 6 — Create a human-approval gate ticket if warranted.
+    Agent 6 — Approval gateway with graduated autonomy.
 
-    Creates a second xyOps ticket of type 'change' containing:
-      - Full RCA summary and confidence score
-      - The proposed Ansible playbook YAML
-      - Test plan and rollback steps
-      - A curl command the approver can run to POST their decision
+    Decision flow:
+      1. Evaluate AutonomyEngine (tier + approval history + risk score)
+      2a. AUTONOMOUS  → commit + auto-merge PR in Gitea, run Ansible directly,
+                        record decision in history — no approval gate ticket.
+      2b. GATED       → create xyOps change ticket with Approve / Decline buttons
+                        as before (human-in-the-loop).
+      3. Skipped      → no playbook available (AI disabled / low confidence).
 
-    If no playbook was generated (AI disabled or low confidence),
-    posts a [--] N/A comment and returns cleanly.
+    Over time, as humans approve actions and they execute successfully, the
+    autonomy engine will unlock autonomous execution for that
+    (service, action_type) pair based on the service's tier policy.
     """
     session = _require_session(req.session_id)
 
-    needs_approval = (
+    needs_gate = (
         REQUIRE_APPROVAL
         and session.severity in APPROVAL_SEVERITY_THRESHOLD
         and session.analysis.get("ansible_playbook")
@@ -646,66 +922,190 @@ async def agent_approval(req: AgentRequest) -> dict:
         and _http
     )
 
-    if needs_approval:
-        await post_step_comment(
-            session.ticket_id, 5, "started",
-            "Creating **approval gate** ticket for human review...",
-            _post,
-        )
-        session.approval_id = f"apr-{uuid.uuid4().hex[:12]}"
-        # Track approval gate usage
-        from .telemetry import compute_agent_approval_required_total, compute_agent_actions_total
-        compute_agent_approval_required_total.inc()
-        compute_agent_actions_total.labels(action_type="approval_requested").inc()
-        approval_req = await request_approval(
-            approval_id=session.approval_id,
-            incident_ticket_id=session.ticket_id,
-            alert_name=session.alert_name,
+    if needs_gate:
+        action_type = session.analysis.get("recommended_action", "")
+        risk_score  = session.risk_score
+
+        # ── Autonomy check ────────────────────────────────────────────────────
+        autonomy = check_autonomy_for_new_service(
             service_name=session.service_name,
-            severity=session.severity,
-            analysis=session.analysis,
-            bridge_trace_id=session.bridge_trace_id,
-            xyops_post=_post,
-            xyops_url=XYOPS_URL,
-            http=_http,
-        )
-        session.approval_ticket_id = approval_req.approval_ticket_id
-        session.approval_ticket_num = approval_req.approval_ticket_num
-        session.stage = "awaiting_approval"
-
-        await post_step_comment(
-            session.ticket_id, 5, "waiting",
-            f"Awaiting human approval — see **Ticket #{session.approval_ticket_num}**  \n"
-            f"Approve: `POST /approval/{session.approval_id}/decision` "
-            f"`{{\"approved\":true,\"decided_by\":\"your-name\"}}`",
-            _post,
+            action_type=action_type,
+            risk_score=risk_score,
         )
 
-        logger.info(
-            "Agent approval complete  session=%s  approval_id=%s  approval_ticket=#%s",
-            req.session_id, session.approval_id, session.approval_ticket_num,
+        session.approval_id = f"apr-{uuid.uuid4().hex[:12]}"
+
+        # Track telemetry
+        from .telemetry import (
+            compute_agent_approval_required_total,
+            compute_agent_autonomous_actions_total,
+            compute_agent_actions_total,
         )
-        await asyncio.sleep(WORKFLOW_STEP_DELAY)
-        return {
-            "status": "ok",
-            "session_id": req.session_id,
-            "agent": "approval-gateway",
-            "ticket_num": session.ticket_num,
-            "approval_id": session.approval_id,
-            "approval_ticket_id": session.approval_ticket_id,
-            "approval_ticket_num": session.approval_ticket_num,
-            "message": (
-                f"Approval gate: Ticket #{session.approval_ticket_num} created — "
-                f"POST /approval/{session.approval_id}/decision to decide"
-            ),
-        }
+
+        if autonomy.autonomous:
+            # ── AUTONOMOUS path ───────────────────────────────────────────────
+            compute_agent_autonomous_actions_total.inc()
+            compute_agent_actions_total.labels(action_type="autonomous_execution").inc()
+
+            await post_step_comment(
+                session.ticket_id, 5, "started",
+                f"🤖 **Autonomous execution** — trust threshold met for "
+                f"`{action_type}` on `{session.service_name}` "
+                f"(tier: `{autonomy.tier.value}`)  \n"
+                f"> {autonomy.gate_reason}",
+                _post,
+            )
+
+            auto_result = await execute_autonomous(
+                session_id=req.session_id,
+                approval_id=session.approval_id,
+                incident_ticket_id=session.ticket_id,
+                alert_name=session.alert_name,
+                service_name=session.service_name,
+                severity=session.severity,
+                analysis=session.analysis,
+                bridge_trace_id=session.bridge_trace_id,
+                action_type=action_type,
+                env_tier=autonomy.tier.value,
+                risk_score=risk_score,
+                auto_merge_pr=autonomy.auto_merge_pr,
+                http=_http,
+                xyops_post=_post,
+            )
+
+            session.approval_ticket_id = ""
+            session.approval_ticket_num = 0
+            session.autonomy_decision = "AUTONOMOUS"
+            session.stage = "autonomous_executing"
+            session.stage_durations["autonomous_executing"] = round(time.time() - session.created_at, 2)
+            _persist_session(session)
+
+            pr_detail = ""
+            if auto_result.get("gitea_pr_num"):
+                pr_detail = (
+                    f"  \nGitea PR [#{auto_result['gitea_pr_num']}]"
+                    f"({auto_result['gitea_pr_url']}) auto-merged ✓"
+                )
+
+            await post_step_comment(
+                session.ticket_id, 5, "done",
+                f"🤖 Autonomous playbook execution started{pr_detail}  \n"
+                f"Watch [>>] comments for live results",
+                _post,
+            )
+
+            logger.info(
+                "Agent approval AUTONOMOUS  session=%s  action=%s  tier=%s  approval_id=%s",
+                req.session_id, action_type, autonomy.tier.value, session.approval_id,
+            )
+            await asyncio.sleep(WORKFLOW_STEP_DELAY)
+            return {
+                "status": "ok",
+                "session_id": req.session_id,
+                "agent": "approval-gateway",
+                "mode": "autonomous",
+                "ticket_num": session.ticket_num,
+                "approval_id": session.approval_id,
+                "tier": autonomy.tier.value,
+                "gate_reason": autonomy.gate_reason,
+                "gitea_pr_num": auto_result.get("gitea_pr_num"),
+                "message": (
+                    f"Autonomous execution: {session.service_name}/{action_type} "
+                    f"(tier={autonomy.tier.value}) — playbook running without human approval"
+                ),
+            }
+
+        else:
+            # ── GATED path (human approval required) ─────────────────────────
+            compute_agent_approval_required_total.inc()
+            compute_agent_actions_total.labels(action_type="approval_requested").inc()
+
+            await post_step_comment(
+                session.ticket_id, 5, "started",
+                f"Creating **approval gate** ticket for human review  \n"
+                f"Tier: `{autonomy.tier.value}` | "
+                f"Gate reason: {autonomy.gate_reason}",
+                _post,
+            )
+            approval_req = await request_approval(
+                session_id=req.session_id,
+                approval_id=session.approval_id,
+                incident_ticket_id=session.ticket_id,
+                alert_name=session.alert_name,
+                service_name=session.service_name,
+                severity=session.severity,
+                analysis=session.analysis,
+                bridge_trace_id=session.bridge_trace_id,
+                xyops_post=_post,
+                xyops_url=XYOPS_URL,
+                http=_http,
+                action_type=action_type,
+                env_tier=autonomy.tier.value,
+                risk_score=risk_score,
+            )
+            session.approval_ticket_id = approval_req.approval_ticket_id
+            session.approval_ticket_num = approval_req.approval_ticket_num
+            session.autonomy_decision = "APPROVAL_GATED"
+            session.stage = "awaiting_approval"
+            session.stage_durations["awaiting_approval"] = round(time.time() - session.created_at, 2)
+            _persist_session(session)
+
+            # Build trust progress message for the comment
+            trust_msg = ""
+            if autonomy.trust_score:
+                ts = autonomy.trust_score
+                policy = autonomy.tier_policy
+                trust_msg = (
+                    f"  \n**Autonomy progress:** "
+                    f"{ts.approved_count + ts.autonomous_count}/"
+                    f"{policy.min_approvals_for_autonomy} approvals needed "
+                    f"({ts.success_rate:.0%} success rate, need ≥{policy.min_success_rate:.0%})"
+                )
+
+            await post_step_comment(
+                session.ticket_id, 5, "waiting",
+                f"Awaiting human approval — see **Ticket #{session.approval_ticket_num}**  \n"
+                f"Approve: `POST /approval/{session.approval_id}/decision` "
+                f"`{{\"approved\":true,\"decided_by\":\"your-name\"}}`"
+                f"{trust_msg}",
+                _post,
+            )
+
+            logger.info(
+                "Agent approval GATED  session=%s  approval_id=%s  approval_ticket=#%s  tier=%s",
+                req.session_id, session.approval_id, session.approval_ticket_num,
+                autonomy.tier.value,
+            )
+            await asyncio.sleep(WORKFLOW_STEP_DELAY)
+            return {
+                "status": "ok",
+                "session_id": req.session_id,
+                "agent": "approval-gateway",
+                "mode": "approval_required",
+                "ticket_num": session.ticket_num,
+                "approval_id": session.approval_id,
+                "approval_ticket_id": session.approval_ticket_id,
+                "approval_ticket_num": session.approval_ticket_num,
+                "tier": autonomy.tier.value,
+                "gate_reason": autonomy.gate_reason,
+                "trust": autonomy.trust_score.reason if autonomy.trust_score else "no history",
+                "message": (
+                    f"Approval gate: Ticket #{session.approval_ticket_num} created — "
+                    f"POST /approval/{session.approval_id}/decision to decide"
+                ),
+            }
     else:
         await post_step_comment(
             session.ticket_id, 5, "skipped",
             "Approval gate — N/A (no Ansible playbook or approval not required)",
             _post,
         )
+        session.autonomy_decision = session.analysis.get("autonomy_level", "HUMAN_ONLY").upper()
+        session.completed_at = time.time()
+        session.mttr_seconds = round(session.completed_at - session.created_at, 1)
         session.stage = "complete"
+        session.stage_durations["complete"] = round(time.time() - session.created_at, 2)
+        _persist_session(session)
         logger.info(
             "Agent approval skipped  session=%s  reason=no_playbook_or_not_required",
             req.session_id,
@@ -715,6 +1115,7 @@ async def agent_approval(req: AgentRequest) -> dict:
             "status": "ok",
             "session_id": req.session_id,
             "agent": "approval-gateway",
+            "mode": "skipped",
             "ticket_num": session.ticket_num,
             "message": "No approval gate needed — pipeline complete",
         }
@@ -724,21 +1125,58 @@ async def agent_approval(req: AgentRequest) -> dict:
 
 @pipeline_router.get("/session/{session_id}")
 async def get_session(session_id: str) -> dict:
-    """Return current session state (useful for debugging from the host)."""
+    """Return current session state for UI visualization."""
     session = _require_session(session_id)
+    trust_metrics = _compute_trust_metrics(
+        session.service_name,
+        session.analysis.get("recommended_action", ""),
+    )
+    trust_progress = (
+        f"{trust_metrics['approvals_recorded']} / "
+        f"{trust_metrics['approvals_recorded'] + trust_metrics['next_tier']['approvals_needed']} approvals"
+    )
+
     return {
         "session_id": session.session_id,
         "service_name": session.service_name,
         "alert_name": session.alert_name,
         "severity": session.severity,
+        "summary": session.summary,
         "stage": session.stage,
         "ticket_id": session.ticket_id,
         "ticket_num": session.ticket_num,
         "approval_id": session.approval_id,
         "approval_ticket_num": session.approval_ticket_num,
-        "has_logs": bool(session.logs),
-        "has_metrics": bool(session.metrics),
-        "has_analysis": bool(session.analysis),
+        "risk_score": round(session.risk_score, 2),
+        "risk_level": session.risk_level,
         "created_at": session.created_at,
         "age_seconds": round(time.time() - session.created_at),
+        "completed_at": session.completed_at,
+        "mttr_seconds": session.mttr_seconds,
+        "outcome": session.outcome,
+        # Raw agent data — frontend builds AgentStep[] via sessionToAgents()
+        "logs": session.logs,
+        "metrics": session.metrics,
+        "stage_durations": session.stage_durations,
+        # Analysis results for incident dashboard
+        "analysis": {
+            "root_cause": session.analysis.get("root_cause", "Analyzing..."),
+            "recommended_action": session.analysis.get("recommended_action", "Pending analysis"),
+            "confidence": session.analysis.get("confidence", 0),
+            "scenario_id": session.analysis.get("scenario_id", "Unknown"),
+            "scenario_confidence": session.analysis.get("scenario_confidence", 0),
+            "provider": session.analysis.get("provider", "scenario-catalog"),
+            "model": session.analysis.get("model"),
+            "knowledge_entry_id": session.analysis.get("knowledge_entry_id"),
+            "local_validation_status": session.analysis.get("local_validation_status"),
+            "local_validation_confidence": session.analysis.get("local_validation_confidence"),
+            "local_validation_reason": session.analysis.get("local_validation_reason"),
+            "local_validation_completed": session.analysis.get("local_validation_completed", False),
+            "knowledge_top_similarity": session.analysis.get("knowledge_top_similarity"),
+            "local_model": session.analysis.get("local_model"),
+        },
+        # Autonomy decision for UI
+        "autonomy_decision": session.autonomy_decision,
+        "trust_progress": trust_progress,
+        "trust_metrics": trust_metrics,
     }

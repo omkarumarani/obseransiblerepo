@@ -137,6 +137,13 @@ def setup_telemetry(fastapi_app=None, service_name: str = "compute-agent") -> No
     """
     global incident_counter, alert_processing_histogram, webhook_counter
 
+    if os.getenv("DISABLE_OTEL_EXPORTERS", "false").lower() == "true":
+        logger.info("OpenTelemetry exporters disabled for this process")
+        incident_counter = None
+        alert_processing_histogram = None
+        webhook_counter = None
+        return
+
     effective_name = os.getenv("OTEL_SERVICE_NAME", service_name)
     resource = Resource.create(
         {

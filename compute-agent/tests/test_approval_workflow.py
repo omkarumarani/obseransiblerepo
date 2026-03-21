@@ -44,6 +44,7 @@ class TestRequestApproval:
         from app.approval_workflow import request_approval, _pending
         _pending.clear()
         return await request_approval(
+            session_id="sess-001",
             approval_id=approval_id,
             incident_ticket_id="t_incident_001",
             alert_name="HighErrorRate",
@@ -133,6 +134,7 @@ class TestProcessDecision:
         from app.approval_workflow import request_approval, _pending
         _pending.clear()
         req = await request_approval(
+            session_id="sess-002",
             approval_id=approval_id,
             incident_ticket_id="t_inc_001",
             alert_name="HighErrorRate",
@@ -254,6 +256,7 @@ class TestPendingHelpers:
         from app.approval_workflow import get_pending, request_approval, _pending
         _pending.clear()
         await request_approval(
+            session_id="gp-sess",
             approval_id="gp-test",
             incident_ticket_id="t_inc",
             alert_name="TestAlert",
@@ -274,6 +277,7 @@ class TestPendingHelpers:
         # Create 2 approvals
         for i in range(2):
             await request_approval(
+                session_id=f"list-sess-{i}",
                 approval_id=f"list-{i}",
                 incident_ticket_id=f"t_inc_{i}",
                 alert_name="TestAlert",

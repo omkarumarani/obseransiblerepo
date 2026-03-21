@@ -66,6 +66,16 @@ MOCK_ANALYSIS = {
 }
 
 
+class _FakeEnrichment:
+    provider = "test-local"
+
+    def __init__(self, analysis: dict):
+        self._analysis = analysis
+
+    def to_analysis_dict(self):
+        return dict(self._analysis)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Session lifecycle helpers
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -288,14 +298,29 @@ class TestAgentAnalyze:
         from app import pipeline
         await _start_session("frontend-api")
         pipeline._xyops_post_fn = AsyncMock(return_value={"code": 0})
-        with patch("app.pipeline.generate_ai_analysis",
-                   AsyncMock(return_value=MOCK_ANALYSIS)):
+        pipeline._http = _loki_mock_http()
+        fake_analysis = {
+            **MOCK_ANALYSIS,
+            "confidence": "0.91",
+        }
+        with patch("app.pipeline._llm_enrich",
+                   AsyncMock(return_value=_FakeEnrichment(fake_analysis))), \
+             patch("app.pipeline._recommend") as mock_recommend:
+            mock_recommend.return_value = type("Rec", (), {
+                "action_type": "restart_service",
+                "confidence": 0.91,
+                "autonomous": False,
+                "display_name": "Restart service",
+                "rollback_plan": "rollback",
+                "description": "restart",
+                "estimated_duration": "5 minutes",
+            })()
             from httpx import AsyncClient, ASGITransport
             from app.main import app
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 resp = await client.post("/pipeline/agent/analyze",
                                          json={"session_id": "frontend-api"})
-        assert resp.json()["confidence"] == "high"
+        assert resp.json()["confidence"] == "0.91"
 
     async def test_returns_ok_when_ai_disabled(self):
         from app import pipeline
@@ -316,14 +341,19 @@ class TestAgentAnalyze:
         pipeline._sessions.clear()
         await _start_session("frontend-api")
         pipeline._xyops_post_fn = AsyncMock(return_value={"code": 0})
-        with patch("app.pipeline.generate_ai_analysis",
-                   AsyncMock(return_value=MOCK_ANALYSIS)):
+        pipeline._http = _loki_mock_http()
+        with patch("app.pipeline._llm_enrich",
+                   AsyncMock(return_value=_FakeEnrichment(MOCK_ANALYSIS))):
             from httpx import AsyncClient, ASGITransport
             from app.main import app
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 await client.post("/pipeline/agent/analyze",
                                   json={"session_id": "frontend-api"})
-        assert pipeline._sessions["frontend-api"].analysis == MOCK_ANALYSIS
+        analysis = pipeline._sessions["frontend-api"].analysis
+        assert analysis["rca_summary"] == MOCK_ANALYSIS["rca_summary"]
+        assert analysis["confidence"] == MOCK_ANALYSIS["confidence"]
+        assert "risk_score" in analysis
+        assert "evidence_lines" in analysis
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -406,6 +436,7 @@ class TestAgentApproval:
             from app.approval_workflow import ApprovalRequest
             req = ApprovalRequest(
                 approval_id=kwargs["approval_id"],
+                session_id=kwargs["session_id"],
                 incident_ticket_id=kwargs["incident_ticket_id"],
                 alert_name="HighErrorRate",
                 service_name="frontend-api",
@@ -415,6 +446,8 @@ class TestAgentApproval:
                 test_plan=[],
                 rca_summary="rca",
                 bridge_trace_id="trace",
+                action_type="restart_service",
+                env_tier="production",
                 approval_ticket_id="t_apr_001",
                 approval_ticket_num=99,
             )

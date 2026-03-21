@@ -69,6 +69,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry import trace
 from opentelemetry.trace.status import Status, StatusCode
 from pydantic import BaseModel
@@ -83,11 +84,20 @@ from .ai_analyst import (
 )
 from .approval_workflow import (
     ApprovalRequest,
+    execute_autonomous,
     get_pending,
     list_pending,
     process_decision,
     request_approval,
 )
+from .approval_history import history_store
+from .tier_registry import (
+    get_service_tier,
+    get_tier_policy,
+    list_all_tiers,
+    reload_overrides,
+)
+from .autonomy_engine import check_autonomy
 from .telemetry import (
     alert_processing_histogram,
     get_tracer,
@@ -114,6 +124,16 @@ app = FastAPI(
         "incident tickets in xyOps. Fully OTel-instrumented."
     ),
     version="1.0.0",
+)
+
+# ── CORS middleware ───────────────────────────────────────────────────────────
+# Allow browser access from ui-backend and command-center
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3005", "http://localhost:3500", "http://localhost:9005", "*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── Bootstrap OTel (pass app so FastAPIInstrumentor can wrap it) ───────────────
@@ -332,6 +352,128 @@ async def list_pending_approvals() -> dict:
             for r in pending
         ],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Autonomy status + history endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/autonomy/status/{service_name}")
+async def autonomy_status(service_name: str, action_type: str = "", risk_score: float = 0.0) -> dict:
+    """
+    Return the current autonomy status for a service.
+
+    If action_type is provided, also runs a live autonomy check to show
+    whether the next execution of that action would be autonomous or gated.
+
+    GET /autonomy/status/frontend-api?action_type=restart_service&risk_score=0.3
+
+    Returns tier, policy, trust history, and a live autonomy decision.
+    """
+    tier = get_service_tier(service_name)
+    policy = get_tier_policy(tier)
+
+    # Summarise all known (action_type) combinations for this service
+    all_records = history_store.get_history(service_name, action_type or "", 365)
+    action_types_seen: set[str] = {r.action_type for r in history_store._records if r.service_name == service_name}  # noqa: SLF001
+
+    trust_by_action: dict[str, dict] = {}
+    for at in action_types_seen:
+        ts = history_store.compute_trust_score(
+            service_name=service_name,
+            action_type=at,
+            env_tier=tier.value,
+            min_approvals=policy.min_approvals_for_autonomy,
+            min_success_rate=policy.min_success_rate,
+            window_days=policy.history_window_days,
+        )
+        trust_by_action[at] = {
+            "total_decisions": ts.total_decisions,
+            "approved": ts.approved_count,
+            "declined": ts.declined_count,
+            "autonomous": ts.autonomous_count,
+            "success_rate": round(ts.success_rate, 3),
+            "autonomy_eligible": ts.autonomy_eligible,
+            "reason": ts.reason,
+        }
+
+    # Live decision for a specific action+risk (optional)
+    live_decision: dict | None = None
+    if action_type:
+        decision = check_autonomy(
+            service_name=service_name,
+            action_type=action_type,
+            risk_score=risk_score,
+        )
+        live_decision = decision.as_dict()
+
+    service_records = [r for r in history_store._records if r.service_name == service_name]  # noqa: SLF001
+    approvals_recorded = sum(1 for r in service_records if r.decision in ("approved", "autonomous"))
+    executed_records = [r for r in service_records if r.execution_outcome in ("success", "failure")]
+    success_count = sum(1 for r in executed_records if r.execution_outcome == "success")
+    success_rate = (success_count / len(executed_records)) if executed_records else 0.0
+    next_tier = {
+        "name": f"{tier.value}_auto",
+        "approvals_needed": max(policy.min_approvals_for_autonomy - approvals_recorded, 0),
+        "success_rate_needed": policy.min_success_rate,
+    }
+
+    return {
+        "service_name": service_name,
+        "tier": tier.value,
+        "approvals_recorded": approvals_recorded,
+        "success_rate": round(success_rate, 3),
+        "next_tier": next_tier,
+        "policy": {
+            "min_approvals_for_autonomy": policy.min_approvals_for_autonomy,
+            "min_success_rate": policy.min_success_rate,
+            "risk_ceiling": policy.risk_ceiling,
+            "auto_merge_pr": policy.auto_merge_pr,
+            "history_window_days": policy.history_window_days,
+            "description": policy.description,
+        },
+        "trust_by_action": trust_by_action,
+        "live_decision": live_decision,
+    }
+
+
+@app.get("/autonomy/history")
+async def autonomy_history(window_days: int = 90) -> dict:
+    """
+    Return a summary of the approval history store.
+
+    GET /autonomy/history?window_days=30
+
+    Useful for dashboards and audits.
+    """
+    return history_store.get_summary(window_days=window_days)
+
+
+@app.get("/autonomy/tiers")
+async def autonomy_tiers() -> dict:
+    """
+    List all known services with their tier and policy.
+
+    Includes overrides from SERVICE_TIER_MAP_JSON env var and
+    /data/service_tiers.json config file.
+    """
+    return {
+        "tiers": list_all_tiers(),
+        "note": (
+            "Override via SERVICE_TIER_MAP_JSON env var or /data/service_tiers.json. "
+            "Unknown services default to production (safest tier)."
+        ),
+    }
+
+
+@app.post("/autonomy/tiers/reload")
+async def autonomy_tiers_reload() -> dict:
+    """
+    Force a reload of service tier overrides from disk / env.
+    Useful after updating /data/service_tiers.json without restarting the container.
+    """
+    overrides = reload_overrides()
+    return {"status": "reloaded", "override_count": len(overrides)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -788,6 +930,7 @@ async def _create_xyops_ticket(
         )
         approval_id = f"apr-{uuid.uuid4().hex[:12]}"
         approval_req = await request_approval(
+            session_id=service_name,
             approval_id=approval_id,
             incident_ticket_id=ticket_id,
             alert_name=alert_name,
@@ -797,6 +940,7 @@ async def _create_xyops_ticket(
             bridge_trace_id=bridge_trace_id,
             xyops_post=_xyops_post,
             xyops_url=XYOPS_URL,
+            risk_score=0.0,
         )
         approval_ticket_id = approval_req.approval_ticket_id
         approval_ticket_num = approval_req.approval_ticket_num

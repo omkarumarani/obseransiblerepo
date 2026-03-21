@@ -115,6 +115,23 @@ async def fetch_prometheus_context(
         "rps": (
             f'sum(rate(http_server_duration_count{{job="{job}"}}[5m]))'
         ),
+        # ── Extended signals (wiring cpu/memory/connections into ObsFeatures) ──
+        "cpu_usage_pct": (
+            f'rate(process_cpu_seconds_total{{job="{job}"}}[5m]) * 100'
+        ),
+        "memory_usage_pct": (
+            # Primary: divide by total RAM reported by node_exporter.
+            # Fallback: if node_exporter is absent the division returns no data,
+            # so we fall back to dividing by 536870912 (512 MB cap heuristic).
+            f'process_resident_memory_bytes{{job="{job}"}} / on() node_memory_MemTotal_bytes * 100'
+            f' or process_resident_memory_bytes{{job="{job}"}} / 536870912 * 100'
+        ),
+        "active_connections": (
+            # Primary: explicit active-request gauge; fallback to request-count
+            # rate as a proxy when the gauge metric is absent.
+            f'sum(http_server_active_requests{{job="{job}"}})'
+            f' or sum(http_server_duration_count{{job="{job}"}})'
+        ),
     }
 
     results: dict[str, str] = {}

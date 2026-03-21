@@ -1,6 +1,8 @@
 # Observability Learning — Multi-Agent AIOps Platform
 
-A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine used by two specialised domain agents.
+A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a React Command Center UI.
+
+> **Latest:** v8.0.0 — Block F (Local LLM Validation + Knowledge Store) + AIOps Command Center UI.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
 
 ---
 
@@ -14,6 +16,7 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 - [Quick Start](#quick-start)
 - [Key Workflows](#key-workflows)
 - [Environment Variables Reference](#environment-variables-reference)
+- [Release Notes](#release-notes)
 
 ---
 
@@ -35,7 +38,7 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
                   (port 9000)                   (port 9001)
                          │                            │
                          └──────────┬─────────────────┘
-                                    │  enrichment
+                                    │  POST /analyze
                                     ▼
                         Obs-Intelligence Engine
                               (port 9100)
@@ -49,8 +52,9 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
                     │  Evidence Builder                 │
                     │  SRE Reasoning Agent (det.)       │
                     │  LLM Enricher (OpenAI → Claude)   │
+                    │  Local LLM Enricher ◄─────────────┼──► Ollama :11434
+                    │    ChromaDB similarity search ◄───┼──► ChromaDB :8020
                     │  Background: predictive dispatch  │
-                    │  POST /intelligence/record-outcome│
                     └──────────────────────────────────┘
                                     │
                                     ▼
@@ -66,6 +70,17 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
                                     │
                                     ▼
                              Gitea PR / Audit (3002)
+
+                    ─────── Command Center UI ────────
+                    Browser → aiops-ui :3005 (Nginx)
+                                    │
+                              ui-backend :9005
+                    ┌──────────────────────────────┐
+                    │  BFF Aggregator (FastAPI)     │
+                    │  Pipeline history + playback  │
+                    │  Scenario explorer            │
+                    │  Autonomy / trust-score API   │
+                    └──────────────────────────────┘
 ```
 
 **Alert routing** (alertmanager):
@@ -79,19 +94,26 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 
 | Service | Port(s) | Purpose |
 |---|---|---|
+| Service | Port(s) | Purpose |
+|---|---|---|
 | **otel-collector** | 4317 (gRPC), 4318 (HTTP), 8889 (Prom scrape), 13133 (health) | Receives all OTLP telemetry, exports to Prometheus / Tempo / Loki |
 | **prometheus** | 9090 | Metrics TSDB + alert rule evaluation |
 | **loki** | 3100 | Log aggregation (LogQL) |
 | **tempo** | 3200 | Distributed trace storage (TraceQL) |
-| **grafana** | 3000 | Dashboards — metrics, traces, logs, agent decisions |
+| **grafana** | 3001 | Dashboards — metrics, traces, logs, agent decisions |
 | **alertmanager** | 9093 | Alert grouping/dedup + webhook routing |
-| **compute-agent** | 9000 | Compute AIOps agent — `POST /webhook`, `GET /health`, `GET /metrics` |
-| **storage-agent** | 9001 | Storage AIOps agent — `POST /webhook`, `GET /health`, `GET /metrics` |
-| **obs-intelligence** | 9100 | Shared intelligence engine — `GET /intelligence/current`, `POST /analyze`, `POST /intelligence/record-outcome` |
+| **compute-agent** | 9000 | Compute AIOps agent — `POST /webhook`, `GET /health`, `GET /session/{id}` |
+| **storage-agent** | 9001 | Storage AIOps agent — `POST /webhook`, `GET /health`, `GET /session/{id}` |
+| **obs-intelligence** | 9100 | Shared intelligence engine — `/analyze`, `/intelligence/current`, `/knowledge/*` |
 | **storage-simulator** | 9200 | Ceph scenario emulator — `POST /scenario/{name}`, `GET /metrics` |
+| **local-llm** | 11434 | Ollama — hosts `llama3.2:3b` (corroboration) + `nomic-embed-text` (embeddings) |
+| **knowledge-store** | 8020 | ChromaDB vector store — incident embeddings for similarity retrieval |
 | **xyops** | 5522, 5523 | AIOps platform — tickets, workflows, job scheduler |
 | **ansible-runner** | 8090 | Playbook executor — `POST /run` |
 | **gitea** | 3002 | Self-hosted Git — Ansible PR audit trail |
+| **ui-backend** | 9005 | BFF aggregator — unified API for Command Center (`/pipeline/*`, `/scenarios`, `/autonomy`) |
+| **aiops-ui** | 3005 | Production Nginx serving the React Command Center (proxies `/api/*` → ui-backend) |
+| **command-center** | 3500 | Vite dev server for Command Center React app |
 | **frontend-api** | 8080 | Demo app — emits OTel spans/metrics/logs |
 | **backend-api** | 8081 | Demo app — emits OTel spans/metrics/logs |
 | **loadgen** | — | Steady traffic generator (opt-in profile) |
@@ -182,24 +204,43 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
 - **`CONTRIBUTING-SCENARIOS.md`** — full scenario YAML authoring guide covering all fields, available `ObsFeatures` fields, confidence scoring formula, autonomy selection guidance, and two worked examples
 - **`DEMO-RUNBOOK.md`** — step-by-step end-to-end rehearsal guide from `docker compose up` through chaos injection, predictive alert observation, approval workflows, Ansible execution, and outcome recording
 
+### Phase 8 — Local LLM Validation & ChromaDB Knowledge Store (Block F)
+- **`local_llm_enricher.py`** — ChromaDB + Ollama module; 6 public methods for similarity retrieval, external result validation, incident storage, outcome updates, entry listing, and stats
+- **Dual-validation pipeline** — every external LLM result (GPT-4o / Claude) is validated by `llama3.2:3b`; verdict (`corroborated`, `weak_support`, `divergent`, `insufficient_context`) written to the xyOps ticket and surfaced in Grafana
+- **`local-llm` service** (Ollama) — pulls `llama3.2:3b` + `nomic-embed-text` on startup; ~2.3 GB; graceful degradation when offline
+- **`knowledge-store` service** (ChromaDB) — vector store persisted in `chroma-data` volume; grows through every resolved incident
+- **New obs-intelligence endpoints** — `GET /knowledge/stats`, `GET /knowledge/entries`, `POST /knowledge/store`, `POST /knowledge/outcome`
+- **Storage-agent `GET /session/{id}`** extended to return all Block F fields (mirroring compute-agent)
+- **Grafana Block F row** — 3 new panels in `obs-intelligence-detail.json`: External LLM Validations, Local Validation Outcomes (colour-coded by verdict), Local Validation Latency p50/p95
+- **Unit tests** — `obs-intelligence/tests/test_local_llm_enricher.py` — 35 tests, 7 classes, fully offline (no Ollama/ChromaDB needed); 35/35 passing
+- **`local_validator.py` deleted** — orphaned predecessor removed
+
+### Phase 9 — AIOps Command Center UI
+- **`command-center/`** — React + TypeScript SPA with React Flow pipeline graph, agent details drawer, incident dashboard, scenario explorer, trust-score tracker, and playback mode
+- **`ui-backend/`** — FastAPI BFF aggregator; consolidates compute-agent, storage-agent, obs-intelligence, Gitea, xyOps into a unified REST API
+- **`aiops-ui/`** — Production Nginx service serving the React build (port 3005); proxies `/api/*` to ui-backend
+- **Agent 4 (Analyze) drawer** — dedicated Local LLM Validation section: verdict badge (colour-coded), confidence `LinearProgress` bar, similarity / count / mode row, reasoning summary box
+- **Grafana `ui-backend.json`** — new dashboard for BFF aggregator metrics
+- **`LEARNING-LAYER-ARCHITECTURE.md`** — deep-dive doc for the feedback/learning layer
+- **`SIMULATION-SCENARIO.md`** — end-to-end scenario trigger guide
+
 ---
 
 ## What Is Still To Add
 
 | Item | Description | Effort |
 |---|---|---|
-| **End-to-end Docker test** | `docker compose up --build` + curl all agent health endpoints + trigger a test alert + verify xyOps ticket with risk score and SRE reasoning block | Low |
-| **oie_client.py in agents** | Replace direct obs_intelligence package import with HTTP client to `http://obs-intelligence:9100/analyze` for true service decoupling | Medium |
 | **Multi-agent correlation** | When compute and storage alerts fire simultaneously, detect cross-domain cascading failures and produce a unified SREAssessment | High |
-| **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts without losing recurrence history | Medium |
+| **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts | Medium |
 | **Notification integrations** | Slack / PagerDuty / email receivers beyond xyOps webhook; notification routing by risk level | Medium |
-| **Ansible live mode** | Real Ansible playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
-| **Scenario schema validation** | JSON Schema / Pydantic validation of `obs-intelligence/scenarios/*.yaml` files at startup with clear schema errors | Low |
+| **Ansible live mode** | Real playbook execution against actual infrastructure targets (set `ANSIBLE_LIVE_MODE=true`) | Medium |
 | **Auth / API key middleware** | Bearer token validation on agent webhook endpoints and obs-intelligence `/analyze`; currently open | Medium |
 | **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
-| **Unit test suite (agents)** | Extend existing compute-agent test suite to cover risk_scorer, recommender, evidence_builder, and sre_reasoning_agent | Medium |
 | **SREAssessment feedback loop** | Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite) | High |
 | **Outcome dashboard drill-down** | Grafana panel linking scenario outcome bars to the originating xyOps ticket and Ansible run log | Low |
+| **Ollama GPU acceleration** | Add `deploy.resources.reservations.devices` to `local-llm` service for CUDA/ROCm GPU inference | Low |
+| **ChromaDB auth** | Enable ChromaDB token authentication before exposing to untrusted networks | Low |
+| **ChromaDB cold-start seeding** | Pre-seed the knowledge store with synthetic past incidents so local validation works on day one | Medium |
 
 ---
 
@@ -262,24 +303,32 @@ Ensure the following host ports are free before starting:
 git clone https://github.com/omkarumarani/obseransiblerepo.git
 cd obseransiblerepo
 
-# Start core stack
-docker compose up --build
+# Start the full stack (all 20+ services)
+docker compose up --build -d
 
 # With load generator + chaos (troublemaker)
-docker compose --profile loadgen --profile troublemaker up --build
-
-# With storage simulator always on (already in default compose)
-docker compose up --build
+docker compose --profile loadgen --profile troublemaker up --build -d
 
 # Health checks
 curl http://localhost:9000/health      # compute-agent
 curl http://localhost:9001/health      # storage-agent
 curl http://localhost:9100/health      # obs-intelligence
+curl http://localhost:9005/health      # ui-backend
+
+# AIOps Command Center UI
+open http://localhost:3005             # production build (Nginx)
+open http://localhost:3500             # dev server (Vite)
+
+# Ollama model status
+docker compose exec local-llm ollama list
+
+# ChromaDB knowledge store stats
+curl http://localhost:9100/knowledge/stats
 
 # Manually trigger a compute test alert
 curl -X POST http://localhost:9000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"HighMemoryUsage","service_name":"frontend-api","severity":"warning","domain":"compute"},"annotations":{"summary":"Memory above 80%","description":"Test","dashboard_url":"http://localhost:3000"},"startsAt":"2026-03-20T10:00:00Z"}]}'
+  -d '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"HighMemoryUsage","service_name":"frontend-api","severity":"warning","domain":"compute"},"annotations":{"summary":"Memory above 80%","description":"Test","dashboard_url":"http://localhost:3001"},"startsAt":"2026-03-20T10:00:00Z"}]}'
 
 # Trigger a storage scenario
 curl -X POST http://localhost:9200/scenario/osd_down
@@ -293,7 +342,7 @@ curl http://localhost:9100/metrics
 # Stop everything (preserves data volumes)
 docker compose down
 
-# Stop and wipe all data
+# Stop and wipe all data (including Ollama models and ChromaDB embeddings)
 docker compose down -v
 ```
 
@@ -363,3 +412,29 @@ Domain agents (on each alert):
 | `GITHUB_REPO` | compute-agent | _(your repo)_ | For Ansible playbook PR audit trail |
 | `GITEA_ENABLED` | compute-agent | `true` | Enable Gitea PR creation on approval |
 | `WORKFLOW_STEP_DELAY_SECONDS` | compute-agent, storage-agent | `5` | Seconds each xyOps canvas node stays highlighted |
+| `LOCAL_LLM_URL` | compute-agent, storage-agent, obs-intelligence | `http://local-llm:11434` | Ollama REST API base URL |
+| `CHROMA_URL` | compute-agent, storage-agent, obs-intelligence | `http://knowledge-store:8000` | ChromaDB HTTP API URL |
+| `LOCAL_LLM_MODEL` | compute-agent, storage-agent, obs-intelligence | `llama3.2:3b` | Ollama model for local corroboration |
+| `LOCAL_LLM_ENABLED` | compute-agent, storage-agent, obs-intelligence | `true` | Set `false` to disable local validation |
+| `LOCAL_LLM_MIN_SIMILARITY` | obs-intelligence | `0.82` | Min cosine similarity to count a past incident as relevant |
+| `LOCAL_LLM_TOP_K` | obs-intelligence | `5` | Max similar incidents retrieved from ChromaDB per query |
+| `COMPUTE_AGENT_URL` | ui-backend | `http://compute-agent:9000` | Compute agent base URL |
+| `STORAGE_AGENT_URL` | ui-backend | `http://storage-agent:9001` | Storage agent base URL |
+| `DB_PATH` | ui-backend | `/data/pipeline_history.db` | SQLite path for pipeline session history |
+
+---
+
+## Release Notes
+
+See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
+
+| Version | Highlights |
+|---|---|
+| **v8.0.0** | Block F: Local LLM validation + ChromaDB knowledge store + AIOps Command Center UI |
+| **v7.0.0** | SRE Reasoning Layer — deterministic `SREAssessment`, OpenAI→Claude failover, outcome tracking |
+| **v6.0.0** | Continuous intelligence — predictive alert dispatch, background APScheduler loops |
+| **v5.0.0** | Risk scoring, evidence builder, LLM enrichment, anomaly detection, forecasting |
+| **v4.0.0** | Shared Obs-Intelligence Engine — 20 scenario YAMLs, `/analyze` API |
+| **v3.0.0** | Domain split — compute-agent + storage-agent + storage-simulator |
+| **v2.0.0** | Alert pipeline — Alertmanager + xyOps + Ansible + Gitea |
+| **v1.0.0** | Core observability stack — OTel, Prometheus, Loki, Tempo, Grafana |

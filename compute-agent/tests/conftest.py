@@ -28,6 +28,7 @@ os.environ.setdefault("LOKI_URL", "http://loki-mock:3100")
 os.environ.setdefault("PROMETHEUS_URL", "http://prometheus-mock:9090")
 os.environ.setdefault("REQUIRE_APPROVAL", "true")
 os.environ.setdefault("ANSIBLE_RUNNER_URL", "http://ansible-runner-mock:8080")
+os.environ.setdefault("DISABLE_OTEL_EXPORTERS", "true")
 
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, MagicMock

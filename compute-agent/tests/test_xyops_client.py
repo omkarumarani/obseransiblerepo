@@ -11,6 +11,13 @@ import pytest
 from unittest.mock import AsyncMock, call
 
 
+def _pipeline_workflow_call(mock_post):
+    return next(
+        c for c in mock_post.call_args_list
+        if c[0][1].get("id") == "aiops_pipeline_wf"
+    )
+
+
 # ── post_step_comment ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -127,7 +134,7 @@ class TestEnsureAiopsWorkflow:
         # Should call create_event/v1
         create_calls = [
             c for c in mock_post.call_args_list
-            if "create_event" in c[0][0]
+            if "create_event" in c[0][0] and c[0][1].get("id") == "aiops_pipeline_wf"
         ]
         assert len(create_calls) == 1
 
@@ -137,8 +144,14 @@ class TestEnsureAiopsWorkflow:
         mock_get = AsyncMock(return_value={"event": {"id": "aiops_pipeline_wf"}})
         await ensure_aiops_workflow(mock_post, mock_get)
         # Should call update_event/v1, not create
-        update_calls = [c for c in mock_post.call_args_list if "update_event" in c[0][0]]
-        create_calls = [c for c in mock_post.call_args_list if "create_event" in c[0][0]]
+        update_calls = [
+            c for c in mock_post.call_args_list
+            if "update_event" in c[0][0] and c[0][1].get("id") == "aiops_pipeline_wf"
+        ]
+        create_calls = [
+            c for c in mock_post.call_args_list
+            if "create_event" in c[0][0] and c[0][1].get("id") == "aiops_pipeline_wf"
+        ]
         assert len(update_calls) == 1
         assert len(create_calls) == 0
 
@@ -147,7 +160,7 @@ class TestEnsureAiopsWorkflow:
         mock_post = AsyncMock(return_value={"code": 0})
         mock_get = AsyncMock(return_value={})
         await ensure_aiops_workflow(mock_post, mock_get)
-        _, payload = mock_post.call_args[0]
+        _, payload = _pipeline_workflow_call(mock_post)[0]
         assert payload.get("type") == "workflow"
 
     async def test_workflow_payload_has_six_agent_nodes(self):
@@ -155,7 +168,7 @@ class TestEnsureAiopsWorkflow:
         mock_post = AsyncMock(return_value={"code": 0})
         mock_get = AsyncMock(return_value={})
         await ensure_aiops_workflow(mock_post, mock_get)
-        _, payload = mock_post.call_args[0]
+        _, payload = _pipeline_workflow_call(mock_post)[0]
         nodes = payload["workflow"]["nodes"]
         # trigger + 6 agent job nodes = 7
         assert len(nodes) == 7
@@ -165,7 +178,7 @@ class TestEnsureAiopsWorkflow:
         mock_post = AsyncMock(return_value={"code": 0})
         mock_get = AsyncMock(return_value={})
         await ensure_aiops_workflow(mock_post, mock_get)
-        _, payload = mock_post.call_args[0]
+        _, payload = _pipeline_workflow_call(mock_post)[0]
         conns = payload["workflow"]["connections"]
         # 6 connections for 7 nodes in a chain
         assert len(conns) == 6

@@ -70,6 +70,7 @@ ANSIBLE_RUNNER_URL: str = os.getenv("ANSIBLE_RUNNER_URL", "http://ansible-runner
 REQUIRE_APPROVAL: bool = os.getenv("STORAGE_REQUIRE_APPROVAL", "true").lower() != "false"
 WORKFLOW_STEP_DELAY: int = int(os.getenv("WORKFLOW_STEP_DELAY_SECONDS", "5"))
 SESSION_TTL_SECONDS: int = 3600
+_OBS_INTELLIGENCE_URL: str = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
 
 TOTAL_STEPS = 5
 
@@ -111,6 +112,27 @@ def _prune_sessions() -> None:
     expired = [k for k, v in _sessions.items() if now - v.created_at > SESSION_TTL_SECONDS]
     for k in expired:
         del _sessions[k]
+
+
+async def _notify_coordinator(session) -> None:
+    """Fire-and-forget: tell obs-intelligence about this storage incident."""
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient() as _c:
+            await _c.post(
+                f"{_OBS_INTELLIGENCE_URL}/intelligence/record-incident",
+                json={
+                    "domain":       "storage",
+                    "service_name": session.service_name,
+                    "alert_name":   session.alert_name,
+                    "risk_score":   session.risk_score,
+                    "scenario_id":  session.ai_result.get("scenario_id", ""),
+                    "run_id":       session.bridge_trace_id,
+                },
+                timeout=3.0,
+            )
+    except Exception:
+        pass  # coordinator is best-effort
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -350,6 +372,9 @@ async def pipeline_analyze(req: AgentRequest) -> dict:
             ai_result["risk_level"] = risk.risk_level
             ai_result["evidence_lines"] = ev_lines
             session.ai_result = ai_result
+
+            # Notify cross-domain coordinator (fire-and-forget — must not block pipeline)
+            asyncio.create_task(_notify_coordinator(session))
 
             # ── Optional: merge pre-computed signals from obs-intelligence ────────
             _obs_url = os.getenv("OBS_INTELLIGENCE_URL", "http://obs-intelligence:9100")
@@ -600,13 +625,41 @@ async def get_session(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"No session: {session_id}")
     return {
         "session_id": session.session_id,
+        "service_name": session.service_name,
         "alert_name": session.alert_name,
         "severity": session.severity,
+        "summary": session.summary,
         "ticket_id": session.ticket_id,
+        "ticket_num": session.ticket_num,
+        "approval_id": session.approval_id,
         "status": session.status,
-        "ai_action": session.ai_result.get("recommended_action"),
-        "ai_autonomy": session.ai_result.get("autonomy_level"),
+        "risk_score": round(session.risk_score, 2),
+        "risk_level": session.risk_level,
         "created_at": session.created_at,
+        "age_seconds": round(time.time() - session.created_at),
+        # Full analysis block — Block F fields included when AI is enabled
+        "analysis": {
+            "root_cause": session.ai_result.get("root_cause", "Analyzing..."),
+            "recommended_action": session.ai_result.get("recommended_action", "Pending analysis"),
+            "confidence": session.ai_result.get("confidence", 0),
+            "scenario_id": session.ai_result.get("scenario_id", "Unknown"),
+            "scenario_confidence": session.ai_result.get("scenario_confidence", 0),
+            "provider": session.ai_result.get("provider", "scenario-catalog"),
+            "model": session.ai_result.get("model"),
+            "knowledge_entry_id": session.ai_result.get("knowledge_entry_id"),
+            # Block F — local LLM validation fields
+            "local_validation_status": session.ai_result.get("local_validation_status"),
+            "local_validation_confidence": session.ai_result.get("local_validation_confidence"),
+            "local_validation_reason": session.ai_result.get("local_validation_reason"),
+            "local_validation_completed": session.ai_result.get("local_validation_completed", False),
+            "knowledge_top_similarity": session.ai_result.get("knowledge_top_similarity"),
+            "local_model": session.ai_result.get("local_model"),
+            "source": session.ai_result.get("source", "external_llm"),
+            "validation_mode": session.ai_result.get("validation_mode", "external_only"),
+            "validated_by": session.ai_result.get("validated_by", []),
+            "local_similar_count": session.ai_result.get("local_similar_count", 0),
+        },
+        "bridge_trace_id": session.bridge_trace_id,
     }
 
 

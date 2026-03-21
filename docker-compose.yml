@@ -697,8 +697,9 @@ services:
     environment:
       # ── Target: xyOps ──────────────────────────────────────
       XYOPS_URL: "http://xyops:5522"
-      # xyOps API key — set in .env file (see .env.example)
-      XYOPS_API_KEY: "${XYOPS_API_KEY}"
+      # xyOps API key — set this after first xyOps login
+      # (Admin → API Keys → Create Key → copy here and restart bridge)
+      XYOPS_API_KEY: "VVAsx-c1NfnKl89LNKlx1-jKdrXqHwF2xM3i-t3xXzA"
 
       # ── AI enrichment ──────────────────────────────────
       # OpenAI key — set in .env file (see .env.example)
@@ -723,6 +724,12 @@ services:
       # ── Obs-Intelligence Engine ───────────────────────────────
       OBS_INTELLIGENCE_URL: "http://obs-intelligence:9100"
 
+      # ── Block F: Local LLM + ChromaDB ─────────────────────────
+      LOCAL_LLM_URL: "http://local-llm:11434"
+      CHROMA_URL: "http://knowledge-store:8000"
+      LOCAL_LLM_MODEL: "llama3.2:3b"
+      LOCAL_LLM_ENABLED: "true"
+
       # ── Gitea git integration ────────────────────────────────
       GITEA_URL: "http://gitea:3000"
       GITEA_ADMIN_USER: "aiops"
@@ -730,6 +737,12 @@ services:
       GITEA_ORG: "aiops-org"
       GITEA_REPO: "ansible-playbooks"
       GITEA_ENABLED: "true"
+
+      # ── Autonomy engine ────────────────────────────────────
+      # Optional: override service tiers via JSON (or mount /data/service_tiers.json)
+      # SERVICE_TIER_MAP_JSON: '{"frontend-api":"production","loadgen":"sandbox"}'
+      # Path for persistent approval history (survives restarts via volume below)
+      APPROVAL_HISTORY_PATH: "/data/approval_history.jsonl"
 
       # ── Workflow step visibility ─────────────────────────────
       # Each xyOps workflow node stays orange for this many seconds so you
@@ -750,6 +763,7 @@ services:
       - "9000:9000"    # Compute agent HTTP  curl http://localhost:9000/health
     volumes:
       - ./obs-intelligence/scenarios:/app/scenarios:ro
+      - compute-agent-data:/data          # persistent approval history + tier config
     depends_on:
       - otel-collector
       - alertmanager
@@ -980,7 +994,7 @@ services:
     environment:
       # ── Target: xyOps ──────────────────────────────────────
       XYOPS_URL: "http://xyops:5522"
-      XYOPS_API_KEY: "${XYOPS_API_KEY}"
+      XYOPS_API_KEY: "VVAsx-c1NfnKl89LNKlx1-jKdrXqHwF2xM3i-t3xXzA"
 
       # ── AI enrichment ──────────────────────────────────────
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
@@ -999,6 +1013,12 @@ services:
 
       # ── Obs-Intelligence Engine ───────────────────────────────
       OBS_INTELLIGENCE_URL: "http://obs-intelligence:9100"
+
+      # ── Block F: Local LLM + ChromaDB ─────────────────────────
+      LOCAL_LLM_URL: "http://local-llm:11434"
+      CHROMA_URL: "http://knowledge-store:8000"
+      LOCAL_LLM_MODEL: "llama3.2:3b"
+      LOCAL_LLM_ENABLED: "true"
 
       # ── Workflow step visibility ───────────────────────────
       WORKFLOW_STEP_DELAY_SECONDS: "5"
@@ -1077,6 +1097,16 @@ services:
       # ── Forecast tuning ────────────────────────────────────
       FORECAST_HORIZON_MINUTES: "60"
 
+      # ── Block F: Local LLM + ChromaDB knowledge store ─────────────────────
+      LOCAL_LLM_URL: "http://local-llm:11434"
+      CHROMA_URL: "http://knowledge-store:8000"
+      LOCAL_LLM_MODEL: "llama3.2:3b"
+      LOCAL_LLM_ENABLED: "true"
+      LOCAL_LLM_MIN_SIMILARITY: "0.82"
+      LOCAL_LLM_TOP_K: "5"
+      EXTERNAL_LLM_AUTHORITY: "true"
+      LOCAL_LLM_VALIDATION_ONLY: "true"
+
       # ── OTel identity ──────────────────────────────────────
       OTEL_SERVICE_NAME: "obs-intelligence"
       OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=local,service.namespace=aiops"
@@ -1089,10 +1119,240 @@ services:
       - "9100:9100"    # Intelligence API  http://localhost:9100/health
     volumes:
       - ./obs-intelligence/scenarios:/app/scenarios:ro
+      - obs-intelligence-data:/data      # persists outcomes.db (BLOCK B feedback loop)
     depends_on:
       - prometheus
       - loki
       - otel-collector
+      - knowledge-store
+    networks:
+      - obs-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Local LLM (Ollama)  — Block F: local validator + embedder
+  #
+  # Hosts llama3.2:3b for incident corroboration and nomic-embed-text
+  # for ChromaDB vector embeddings.  Both models are pulled on first
+  # startup (~2-3 GB).  Subsequent starts reuse the ollama-data volume.
+  #
+  # The pipeline degrades gracefully when this service is unavailable:
+  # local validation returns status="unavailable" and the external LLM
+  # result is used unchanged.
+  #
+  # Ports
+  # ─────
+  #   11434  Ollama REST API  POST /api/generate  POST /api/embeddings
+  # ──────────────────────────────────────────────────────────
+  local-llm:
+    image: ollama/ollama:latest
+    container_name: local-llm
+    hostname: local-llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    entrypoint: ["/bin/sh", "-c",
+      "ollama serve & sleep 5 && ollama pull llama3.2:3b && ollama pull nomic-embed-text && wait"]
+    restart: unless-stopped
+    networks:
+      - obs-net
+
+  # ──────────────────────────────────────────────────────────
+  # Knowledge Store (ChromaDB)  — Block F: vector similarity store
+  #
+  # Persists incident embeddings for cosine similarity retrieval.
+  # Used by local_llm_enricher.py to find the top-K similar past
+  # incidents before running local LLM validation.
+  #
+  # Ports
+  # ─────
+  #   8020 → 8000  ChromaDB HTTP API
+  # ──────────────────────────────────────────────────────────
+  knowledge-store:
+    image: chromadb/chroma:latest
+    container_name: knowledge-store
+    hostname: knowledge-store
+    ports:
+      - "8020:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - obs-net
+
+  # ──────────────────────────────────────────────────────────
+  # UI Backend (Aggregator API)
+  #
+  # FastAPI service that aggregates data from multiple backend services
+  # (compute-agent, storage-agent, obs-intelligence, Gitea, xyOps) and
+  # exposes a unified API for the React frontend.
+  #
+  # Why a separate aggregator?
+  # ───────────────────────────
+  # The browser should NEVER call internal services directly. This service
+  # acts as a BFF (Backend for Frontend) that:
+  #   - Consolidates data from multiple sources
+  #   - Handles authentication/authorization centrally
+  #   - Provides simplified endpoints tailored for UI needs
+  #   - Enables CORS for browser access
+  #
+  # Endpoints
+  # ─────────
+  #   GET  /pipeline/history          — all completed pipeline runs
+  #   GET  /pipeline/session/{id}     — live session state
+  #   GET  /pipeline/session/{id}/snapshot — full historical playback data
+  #   GET  /scenarios                 — all 20 scenarios with stats
+  #   GET  /scenarios/{id}            — scenario detail with history
+  #   GET  /autonomy/status           — current autonomy tier status
+  #   GET  /health                    — health check
+  #
+  # Data sources
+  # ────────────
+  #   compute-agent:9000    — compute domain pipeline state
+  #   storage-agent:9001    — storage domain pipeline state
+  #   obs-intelligence:9100 — anomaly detection, forecasting
+  #   gitea:3000            — PR links, playbook branches
+  #   xyops:5522            — incident tickets, workflow status
+  #
+  # Ports
+  # ─────
+  #   9005  UI Backend API  http://localhost:9005
+  # ──────────────────────────────────────────────────────────
+  ui-backend:
+    build:
+      context: ./ui-backend
+      dockerfile: Dockerfile
+    container_name: ui-backend
+    hostname: ui-backend
+    environment:
+      # ── Service endpoints ───────────────────────────────────
+      COMPUTE_AGENT_URL: "http://compute-agent:9000"
+      STORAGE_AGENT_URL: "http://storage-agent:9001"
+      OBS_INTELLIGENCE_URL: "http://obs-intelligence:9100"
+      GITEA_URL: "http://gitea:3000"
+      XYOPS_URL: "http://xyops:5522"
+      PROMETHEUS_URL: "http://prometheus:9090"
+      LOKI_URL: "http://loki:3100"
+
+      # ── API keys ────────────────────────────────────────────
+      XYOPS_API_KEY: "VVAsx-c1NfnKl89LNKlx1-jKdrXqHwF2xM3i-t3xXzA"
+      GITEA_TOKEN: "${GITEA_TOKEN:-}"
+
+      # ── Persistent storage ──────────────────────────────────
+      # Pipeline history stored in SQLite for playback feature
+      DB_PATH: "/data/pipeline_history.db"
+      PIPELINE_SESSIONS_DB_PATH: "/compute-data/pipeline.db"
+
+      # ── OTel identity ──────────────────────────────────────
+      OTEL_SERVICE_NAME: "ui-backend"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=local,service.namespace=aiops"
+
+      # ── OTel export → collector ────────────────────────────
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_METRIC_EXPORT_INTERVAL_MS: "15000"
+    ports:
+      - "9005:9005"    # UI Backend API  http://localhost:9005
+    volumes:
+      - ui-backend-data:/data
+      - compute-agent-data:/compute-data:ro
+    depends_on:
+      - compute-agent
+      - storage-agent
+      - obs-intelligence
+      - gitea
+      - xyops
+      - otel-collector
+    networks:
+      - obs-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # AIOps UI (Production Build)
+  #
+  # Nginx serving the production-optimized React build.
+  # This is the PRODUCTION entry point for the Command Center UI.
+  # The browser accesses this, and it proxies API calls to ui-backend:9005.
+  #
+  # Why separate from command-center?
+  # ──────────────────────────────────
+  # The existing command-center service runs a dev server (Vite/webpack-dev-server).
+  # This service serves the production build for performance and proper
+  # HTTP caching headers.
+  #
+  # Nginx configuration:
+  # ────────────────────
+  #   - Serve static files from /usr/share/nginx/html (React build artifacts)
+  #   - Proxy /api/* requests to ui-backend:9005
+  #   - Enable gzip compression
+  #   - Set cache headers for assets
+  #
+  # Ports
+  # ─────
+  #   3005  AIOps UI  http://localhost:3005
+  # ──────────────────────────────────────────────────────────
+  aiops-ui:
+    image: nginx:1.25-alpine
+    container_name: aiops-ui
+    hostname: aiops-ui
+    volumes:
+      - ./command-center/dist:/usr/share/nginx/html:ro
+      - ./aiops-ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "3005:80"    # AIOps UI  http://localhost:3005
+    depends_on:
+      - ui-backend
+    networks:
+      - obs-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # AIOps Command Center (Development Server)
+  #
+  # React + TypeScript single-page application for real-time
+  # agent workflow visualization with playback capability.
+  #
+  # Features:
+  #   - Live pipeline view (horizontal node graph with React Flow)
+  #   - Agent status color-coding (idle/running/success/failed/skipped)
+  #   - Click agent → opens side drawer with full JSON output
+  #   - Incident dashboard (risk score, scenario match, autonomy decision)
+  #   - Trust score progress bar ("X / Y approvals to graduate")
+  #   - Real-time polling (3s interval) OR WebSocket
+  #   - Session selector (switch between active incidents)
+  #
+  # API Integration:
+  #   All requests proxied via Vite to ui-backend:9005
+  #     GET /api/pipeline/history
+  #     GET /api/pipeline/session/{id}
+  #     GET /api/scenarios
+  #     GET /api/autonomy/status
+  #
+  # Ports
+  # ─────
+  #   3500  Command Center UI (dev)  http://localhost:3500
+  #
+  # Note: This is the DEVELOPMENT server. For production, use aiops-ui
+  #       service which serves the optimized build via Nginx.
+  # ──────────────────────────────────────────────────────────
+  command-center:
+    build:
+      context: ./command-center
+      dockerfile: Dockerfile
+    container_name: command-center
+    hostname: command-center
+    environment:
+      VITE_API_BASE_URL: "http://ui-backend:9005"
+    ports:
+      - "3500:3000"    # Command Center UI (dev)  http://localhost:3500
+    depends_on:
+      - ui-backend
     networks:
       - obs-net
     restart: unless-stopped
@@ -1111,4 +1371,14 @@ volumes:
   xyops-data:
     driver: local
   gitea-data:
+    driver: local
+  compute-agent-data:
+    driver: local
+  obs-intelligence-data:
+    driver: local
+  ui-backend-data:
+    driver: local
+  ollama-data:
+    driver: local
+  chroma-data:
     driver: local

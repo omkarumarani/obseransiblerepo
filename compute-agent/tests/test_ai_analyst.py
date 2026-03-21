@@ -320,7 +320,15 @@ class TestFetchPrometheusContext:
         mock_http = AsyncMock()
         mock_http.get = AsyncMock(return_value=_prom_response(1.0))
         result = await fetch_prometheus_context("frontend-api", mock_http)
-        assert set(result.keys()) == {"error_rate_pct", "p99_latency_ms", "p50_latency_ms", "rps"}
+        assert set(result.keys()) == {
+            "error_rate_pct",
+            "p99_latency_ms",
+            "p50_latency_ms",
+            "rps",
+            "cpu_usage_pct",
+            "memory_usage_pct",
+            "active_connections",
+        }
 
     async def test_handles_individual_query_exception(self):
         from app.ai_analyst import fetch_prometheus_context

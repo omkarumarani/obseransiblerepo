@@ -39,7 +39,11 @@ import os
 from typing import Sequence
 
 from obs_intelligence.models import ObsFeatures, ScenarioMatch
+from obs_intelligence.outcome_store import OutcomeStore
 from obs_intelligence.scenario_loader import ConditionDef, ScenarioDef, load_scenarios
+
+# Module-level singleton — shared across all requests in this process
+_outcome_store = OutcomeStore()
 
 logger = logging.getLogger("obs_intelligence.scenario_correlator")
 
@@ -152,7 +156,9 @@ def _score_all(
                 matched_features.append(cond.field)
 
         confidence = scored_weight / total_weight
-
+        # ── 2b. Outcome-feedback weight adjustment ────────────────────────
+        adj = _outcome_store.get_weight_adjustment(s.scenario_id)
+        confidence = max(0.0, min(1.0, confidence + adj))
         # ── 3. Threshold filter ───────────────────────────────────────────────
         if confidence < s.confidence_threshold:
             continue

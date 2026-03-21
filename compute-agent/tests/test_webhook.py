@@ -309,7 +309,7 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["service"] == "aiops-bridge"
+        assert data["service"] == "compute-agent"
 
     async def test_health_includes_ai_enabled_field(self):
         from httpx import AsyncClient, ASGITransport

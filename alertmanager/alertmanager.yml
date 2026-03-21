@@ -50,6 +50,13 @@ route:
 
   # ── Sub-routes ─────────────────────────────────────────────
   routes:
+    # AI learning tap: send a copy of EVERY alert to obs-intelligence so it
+    # can learn from all incidents across both domains.  continue: true means
+    # Alertmanager does NOT stop here — it falls through to the domain-specific
+    # routes below and the alert is still handled normally.
+    - receiver: obs-intelligence
+      continue: true
+
     # Storage alerts (domain=storage) → storage-agent
     # Must be first so it matches before the generic critical route.
     - match:
@@ -118,9 +125,18 @@ receivers:
     webhook_configs:
       - url: 'http://storage-agent:9001/webhook'
         send_resolved: true
+
+  # AI learning tap → obs-intelligence
+  # Receives a parallel copy of every alert fired in the system.
+  # obs-intelligence uses this to build cross-domain incident patterns
+  # and improve scenario confidence scores over time.
+  - name: obs-intelligence
+    webhook_configs:
+      - url: 'http://obs-intelligence:9100/webhook'
+        send_resolved: true
         http_config:
           follow_redirects: true
-        max_alerts: 20
+        max_alerts: 50
 
 # ── Templates ─────────────────────────────────────────────────
 # (Optional) Custom notification templates.

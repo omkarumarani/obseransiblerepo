@@ -31,16 +31,19 @@ Environment variables
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
 from obs_intelligence.models import EvidenceReport, RiskAssessment, Recommendation
 from obs_intelligence.evidence_builder import evidence_lines
 from obs_intelligence.sre_reasoning_agent import SREAssessment, SREReasoningAgent
+from obs_intelligence.local_llm_enricher import local_llm_enricher
 
 logger = logging.getLogger("obs_intelligence.llm_enricher")
 
@@ -103,6 +106,21 @@ class LLMEnrichment:
     pr_description: str | None = None
     rollback_steps: list[str] = field(default_factory=list)
     estimated_fix_time_minutes: int | None = None
+    external_model: str | None = None
+    root_cause: str | None = None
+    knowledge_entry_id: str | None = None
+    local_validation_status: str | None = None
+    local_validation_confidence: float | None = None
+    local_validation_reason: str | None = None
+    local_validation_completed: bool = False
+    knowledge_top_similarity: float | None = None
+    local_model: str | None = None
+
+    # Block F dual-validation metadata
+    source: str = "external_llm"          # always "external_llm" — authoritative
+    validation_mode: str = "external_only" # "dual" when local validator ran
+    validated_by: list[str] = field(default_factory=list)
+    local_similar_count: int = 0
 
     # The raw dict returned by the LLM (for downstream use / debugging)
     raw: dict = field(default_factory=dict)
@@ -117,10 +135,12 @@ class LLMEnrichment:
         """
         result: dict = {
             "rca_summary":          self.rca_summary,
+            "root_cause":           self.root_cause or self.rca_summary,
             "recommended_action":   self.recommended_action,
             "autonomy_level":       self.autonomy_level,
             "confidence":           self.confidence,
             "provider":             self.provider,
+            "model":                self.external_model,
             "ansible_playbook":     self.ansible_playbook,
             "ansible_description":  self.ansible_description,
             "test_plan":            self.test_plan,
@@ -137,6 +157,23 @@ class LLMEnrichment:
             result["rollback_steps"] = self.rollback_steps
         if self.estimated_fix_time_minutes is not None:
             result["estimated_fix_time_minutes"] = self.estimated_fix_time_minutes
+        if self.knowledge_entry_id:
+            result["knowledge_entry_id"] = self.knowledge_entry_id
+        if self.local_validation_status:
+            result["local_validation_status"] = self.local_validation_status
+        if self.local_validation_confidence is not None:
+            result["local_validation_confidence"] = self.local_validation_confidence
+        if self.local_validation_reason:
+            result["local_validation_reason"] = self.local_validation_reason
+        if self.knowledge_top_similarity is not None:
+            result["knowledge_top_similarity"] = self.knowledge_top_similarity
+        if self.local_model:
+            result["local_model"] = self.local_model
+        result["local_validation_completed"] = self.local_validation_completed
+        result["source"]            = self.source
+        result["validation_mode"]   = self.validation_mode
+        result["validated_by"]      = list(self.validated_by)
+        result["local_similar_count"] = self.local_similar_count
         return result
 
 
@@ -214,7 +251,104 @@ async def enrich(
     if not raw:
         return None
 
-    return _parse_enrichment(raw, recommendation, provider_used or "unknown")
+    enrichment = _parse_enrichment(raw, recommendation, provider_used or "unknown")
+    enrichment.external_model = _provider_model(provider_used or "unknown")
+    enrichment.root_cause = (
+        enrichment.rca_detail.get("probable_cause")
+        or enrichment.raw.get("root_cause")
+        or enrichment.rca_summary
+    )
+
+    # ── Block F: dual validation ──────────────────────────────────────────────
+    features = evidence.features
+    run_id   = evidence.trace_id or ""
+    scenario_matches = evidence.scenario_matches
+
+    incident_text = (
+        f"Service: {features.service_name} "
+        f"Alert: {features.alert_name} "
+        f"Severity: {features.severity} "
+        f"Domain: {features.domain} "
+        f"Error rate: {features.error_rate:.2%} "
+        f"P99: {features.latency_p99:.3f}s "
+        f"CPU: {features.cpu_usage:.0%} "
+        f"Memory: {features.memory_usage:.0%}"
+    )
+    incident_context: dict = {
+        "service_name":        features.service_name,
+        "alert_name":          features.alert_name,
+        "domain":              features.domain,
+        "scenario_id":         scenario_matches[0].scenario_id if scenario_matches else "",
+        "scenario_confidence": scenario_matches[0].confidence  if scenario_matches else 0.0,
+        "risk_score":          risk.risk_score,
+        "description":         incident_text,
+        "run_id":              run_id,
+    }
+
+    logger.info(
+        "External LLM result authoritative — running local dual validation  run_id=%s", run_id
+    )
+
+    # Mark as external_llm authoritative result; local validation is advisory
+    enrichment.source          = "external_llm"
+    enrichment.validation_mode = "external_only"
+    enrichment.validated_by    = ["external_llm"]
+
+    local_validation = None
+    similar: list = []
+    try:
+        similar = await asyncio.wait_for(
+            local_llm_enricher.query_similar_incidents(incident_text, features.domain),
+            timeout=10.0,
+        )
+        local_validation = await asyncio.wait_for(
+            local_llm_enricher.validate_external_result(
+                incident_context=incident_context,
+                external_result=enrichment,
+                similar=similar,
+            ),
+            timeout=10.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Local LLM validation timed out; keeping external result  run_id=%s", run_id
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Local LLM validation error: %s  run_id=%s", exc, run_id)
+
+    # Fire-and-forget ChromaDB store (never blocks the pipeline)
+    asyncio.create_task(
+        local_llm_enricher.store_incident_resolution(
+            incident_context=incident_context,
+            external_result=enrichment,
+            local_validation=local_validation,
+            similar=similar,
+            outcome="pending",
+            run_id=run_id,
+        )
+    )
+
+    if local_validation is not None:
+        enrichment.validated_by.append("local_llm")
+        enrichment.validation_mode          = "dual"
+        enrichment.local_validation_status  = local_validation.validation_status
+        enrichment.local_validation_confidence = local_validation.confidence
+        enrichment.local_validation_reason  = local_validation.reasoning_summary
+        enrichment.local_validation_completed = True
+        enrichment.knowledge_top_similarity  = local_validation.top_similarity
+        enrichment.local_similar_count       = local_validation.similar_count
+
+    enrichment.local_similar_count = enrichment.local_similar_count or len(similar)
+    enrichment.local_model = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
+
+    if local_validation and local_validation.validation_status == "divergent":
+        logger.warning(
+            "Local LLM diverged from external result  run_id=%s  top_similarity=%.2f",
+            run_id,
+            similar[0].similarity() if similar else 0.0,
+        )
+
+    return enrichment
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -367,6 +501,13 @@ async def _call_claude(prompt: str, http: httpx.AsyncClient) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal: response parser
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _provider_model(provider_used: str) -> str:
+    if provider_used == "openai":
+        return _OPENAI_MODEL
+    if provider_used == "claude":
+        return _CLAUDE_MODEL
+    return ""
 
 def _parse_enrichment(
     raw: dict,
