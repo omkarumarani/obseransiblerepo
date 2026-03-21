@@ -638,6 +638,117 @@ with tab_outcomes:
             )
             st.plotly_chart(fig2, use_container_width=True)
 
+    st.divider()
+
+    # ── Scenario Confidence Learning (RL feedback loop) ───────────────────────
+    st.subheader("📈 Scenario Confidence Learning")
+    st.caption(
+        "Each recorded outcome (remediation result + LLM validation signal) is fed "
+        "back into the scenario correlator using exponential time decay and a "
+        "dynamic evidence-tier cap.  Green = confidence boosted, Red = penalised."
+    )
+
+    fb          = api_get(f"{OBS_INTELLIGENCE_URL}/intelligence/feedback-stats")
+    fb_scenarios = (fb or {}).get("scenarios", [])
+    fb_global    = (fb or {}).get("global", {})
+
+    if fb_global:
+        g1, g2, g3, g4, g5 = st.columns(5)
+        g1.metric("Scenarios Tracked",  fb_global.get("scenarios_tracked", 0))
+        g2.metric("Total Outcomes",     fb_global.get("total_outcomes_recorded", 0))
+        g3.metric("Avg Weight Δ",       f"{fb_global.get('avg_weight_adjustment', 0.0):+.3f}")
+        g4.metric("↑ Improving",        fb_global.get("scenarios_improving", 0),
+                  delta=fb_global.get("scenarios_improving", 0) or None)
+        g5.metric("↓ Degrading",        fb_global.get("scenarios_degrading", 0),
+                  delta=(-fb_global.get("scenarios_degrading", 0)) if fb_global.get("scenarios_degrading", 0) > 0 else None)
+
+    active_scenarios = [s for s in fb_scenarios if s.get("total_seen", 0) > 0]
+    if active_scenarios:
+        # Bar chart: weight adjustment per scenario
+        df_fb = pd.DataFrame(active_scenarios)
+        df_fb["bar_colour"] = df_fb["weight_adjustment"].apply(
+            lambda v: "#22c55e" if v > 0.01 else ("#ef4444" if v < -0.01 else "#64748b")
+        )
+        fig_fb = px.bar(
+            df_fb, x="scenario_id", y="weight_adjustment",
+            title="Confidence Weight Adjustment per Scenario  (learned from outcomes)",
+            color="bar_colour",
+            color_discrete_map="identity",
+            labels={"weight_adjustment": "Weight Δ", "scenario_id": "Scenario"},
+            text="weight_adjustment",
+        )
+        fig_fb.update_traces(texttemplate="%{text:+.4f}", textposition="outside")
+        fig_fb.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font_color="#e1e4e8",
+            showlegend=False,
+            xaxis_tickangle=-30,
+            yaxis=dict(range=[-0.30, 0.30], zeroline=True, zerolinecolor="#374151"),
+        )
+        st.plotly_chart(fig_fb, use_container_width=True)
+
+        # Per-scenario summary table
+        _TIER_ICON  = {"strong": "🟢", "high": "🟡", "medium": "🔵", "low": "⚪", "none": "—"}
+        _TREND_ICON = {"improving": "↗", "degrading": "↘", "stable": "→"}
+        table_rows = []
+        for s in active_scenarios:
+            tier  = s.get("evidence_tier", "none")
+            trend = s.get("trend", "stable")
+            table_rows.append({
+                "Scenario":     s["scenario_id"],
+                "Tier":         f"{_TIER_ICON.get(tier,'—')} {tier}",
+                "Trend":        f"{_TREND_ICON.get(trend,'?')} {trend}",
+                "Weight Δ":     f"{s.get('weight_adjustment', 0.0):+.4f}",
+                "Decay Rate":   f"{s.get('decay_success_rate', 0.5):.1%}",
+                "Raw Rate":     f"{s.get('success_rate', 0.0):.1%}",
+                "Outcomes":     s.get("total_seen", 0),
+                "Signals":      s.get("signal_count", 0),
+                "Last Updated": (s.get("last_updated") or "")[:16],
+            })
+        st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+
+        # Sparklines — up to 3 scenarios that have trend data
+        spark_scenarios = [
+            s for s in active_scenarios
+            if s.get("total_seen", 0) >= 3 and s.get("recent_outcomes")
+        ][:3]
+        if spark_scenarios:
+            st.markdown("**Outcome History (most recent runs, newest right):**")
+            sp_cols = st.columns(len(spark_scenarios))
+            for i, s in enumerate(spark_scenarios):
+                with sp_cols[i]:
+                    pts = s.get("recent_outcomes", [])
+                    if pts:
+                        df_sp = pd.DataFrame(pts)
+                        df_sp["i"] = range(len(df_sp))
+                        fig_sp = px.line(
+                            df_sp, x="i", y="outcome_value",
+                            title=s["scenario_id"],
+                            range_y=[-0.1, 1.3],
+                            markers=True,
+                        )
+                        fig_sp.add_hline(y=0.5, line_dash="dot", line_color="#475569",
+                                         annotation_text="neutral", annotation_font_size=10)
+                        fig_sp.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="#e1e4e8",
+                            height=200,
+                            margin=dict(l=0, r=0, t=30, b=0),
+                            showlegend=False,
+                            xaxis=dict(title="", showticklabels=False),
+                            yaxis=dict(title="", tickvals=[0, 0.5, 1.0],
+                                       ticktext=["fail", "partial", "pass"]),
+                        )
+                        st.plotly_chart(fig_sp, use_container_width=True)
+    else:
+        st.info(
+            "No outcome data yet.  Outcomes are recorded automatically when domain agents "
+            "report remediation results via `POST /intelligence/record-outcome`.",
+            icon="ℹ️",
+        )
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: Pipeline History
 # ══════════════════════════════════════════════════════════════════════════════

@@ -156,18 +156,21 @@ async def record_outcome(body: dict) -> dict:
     # Persist to SQLite and recalculate weight adjustment
     run_id = str(body.get("run_id", ""))
     resolution_time_seconds = body.get("resolution_time_seconds")
+    res_time_float = float(resolution_time_seconds) if resolution_time_seconds is not None else None
     _outcome_store.record(
         scenario_id=scenario_id,
         outcome=outcome,
         run_id=run_id,
         domain=domain or "compute",
+        signal_strength=1.0,
+        resolution_time_seconds=res_time_float,
     )
     updated = _learning_store.update_outcome(
         scenario_id=scenario_id,
         service_name=service,
         run_id=run_id,
         outcome=outcome,
-        resolution_time_seconds=float(resolution_time_seconds) if resolution_time_seconds is not None else None,
+        resolution_time_seconds=res_time_float,
     )
 
     # Best-effort: update the ChromaDB entry for this run_id
@@ -181,11 +184,64 @@ async def record_outcome(body: dict) -> dict:
             )
         )
 
+    # Retrieve updated weight for richer response
+    adj = _outcome_store.get_weight_adjustment(scenario_id)
+    weights = {s["scenario_id"]: s for s in _outcome_store.stats_all()}
+    stats   = weights.get(scenario_id, {})
+
     logger.info(
-        "Scenario outcome recorded  scenario=%s  outcome=%s  service=%s  domain=%s  learning_updates=%d",
+        "Scenario outcome recorded  scenario=%s  outcome=%s  service=%s  domain=%s  "
+        "learning_updates=%d  weight_adj=%.4f  tier=%s  trend=%s",
         scenario_id, outcome, service, domain, updated,
+        adj, stats.get("evidence_tier", "none"), stats.get("trend", "stable"),
     )
-    return {"status": "ok", "scenario_id": scenario_id, "outcome": outcome}
+    return {
+        "status":         "ok",
+        "scenario_id":    scenario_id,
+        "outcome":        outcome,
+        "weight_adjustment": adj,
+        "evidence_tier":  stats.get("evidence_tier", "none"),
+        "trend":          stats.get("trend", "stable"),
+        "total_seen":     stats.get("total_seen", 1),
+    }
+
+
+@app.get("/intelligence/feedback-stats")
+async def feedback_stats() -> dict:
+    """
+    Return per-scenario confidence-weight statistics for the Streamlit
+    Learning Feedback panel, including decay-adjusted success rates, evidence
+    tiers, trend direction, and global learning health metrics.
+
+    Includes sparkline data (last 10 outcomes) for the top-10 scenarios by
+    total_seen so the dashboard can render outcome history charts.
+    """
+    scenarios = _outcome_store.stats_all()
+
+    # Attach sparkline trend data to the most-active scenarios
+    for s in scenarios[:10]:
+        s["recent_outcomes"] = _outcome_store.trend_data(s["scenario_id"], limit=10)
+
+    total_outcomes = sum(s["total_seen"] for s in scenarios)
+    improving      = sum(1 for s in scenarios if s["trend"] == "improving")
+    degrading      = sum(1 for s in scenarios if s["trend"] == "degrading")
+    avg_adj        = (
+        sum(s["weight_adjustment"] for s in scenarios) / len(scenarios)
+        if scenarios else 0.0
+    )
+
+    return {
+        "status": "ok",
+        "scenarios": scenarios,
+        "global": {
+            "scenarios_tracked":       len(scenarios),
+            "total_outcomes_recorded": total_outcomes,
+            "avg_weight_adjustment":   round(avg_adj, 4),
+            "scenarios_improving":     improving,
+            "scenarios_stable":        len(scenarios) - improving - degrading,
+            "scenarios_degrading":     degrading,
+        },
+    }
 
 
 @app.get("/intelligence/scenario-stats")
@@ -282,7 +338,7 @@ async def validate_external_analysis(body: dict) -> dict:
         run_id=run_id,
     )
 
-    # ── Step 4: Prometheus counters ────────────────────────────────
+    # ── Step 4: Prometheus counters + validation-signal feedback ──────────
     obs_intelligence_external_validation_total.labels(
         domain=domain,
         provider=str(external_analysis.get("provider", "external")),
@@ -293,6 +349,18 @@ async def validate_external_analysis(body: dict) -> dict:
         domain=domain,
         verdict=verdict,
     ).inc()
+    # Route LLM validation verdicts back into scenario confidence weights:
+    # corroborated → small positive signal; divergent → small negative signal.
+    if scenario_id and local_val and verdict in ("corroborated", "divergent"):
+        _outcome_store.record_validation_signal(
+            scenario_id=scenario_id,
+            validation_status=verdict,
+            run_id=run_id,
+        )
+        logger.debug(
+            "Validation signal fed back  scenario=%s  verdict=%s  run_id=%s",
+            scenario_id, verdict, run_id,
+        )
 
     # ── Response  (backward-compatible schema) ───────────────────────
     # Map new LocalValidationResult field names → legacy names so existing
