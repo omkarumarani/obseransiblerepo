@@ -115,24 +115,69 @@ def _prune_sessions() -> None:
 
 
 async def _notify_coordinator(session) -> None:
-    """Fire-and-forget: tell obs-intelligence about this storage incident."""
+    """Fire-and-forget: tell obs-intelligence about this storage incident.
+
+    v2: includes a ``signals`` snapshot so obs-intelligence can run the
+    CrossDomainCorrelator without an extra Prometheus round-trip.  When a
+    simultaneous compute incident is detected a ``unified_assessment`` is
+    returned and we post it as a ticket comment.
+    """
     try:
         import httpx as _httpx
+        raw = session.metrics_raw or {}
+        payload = {
+            "domain":       "storage",
+            "service_name": session.service_name,
+            "alert_name":   session.alert_name,
+            "risk_score":   session.risk_score,
+            "scenario_id":  session.ai_result.get("scenario_id", ""),
+            "run_id":       session.bridge_trace_id,
+            "signals": {
+                "io_latency_s":   float(raw.get("io_latency", 0) or 0),
+                "pool_usage_pct": float(raw.get("pool_usage_pct", 0) or 0) / 100.0,
+                "osd_up":         int(raw.get("osd_up", 0) or 0),
+                "osd_total":      int(raw.get("osd_total", 0) or 0),
+            },
+        }
         async with _httpx.AsyncClient() as _c:
-            await _c.post(
+            resp = await _c.post(
                 f"{_OBS_INTELLIGENCE_URL}/intelligence/record-incident",
-                json={
-                    "domain":       "storage",
-                    "service_name": session.service_name,
-                    "alert_name":   session.alert_name,
-                    "risk_score":   session.risk_score,
-                    "scenario_id":  session.ai_result.get("scenario_id", ""),
-                    "run_id":       session.bridge_trace_id,
-                },
+                json=payload,
                 timeout=3.0,
             )
+            data = resp.json()
+            unified = data.get("unified_assessment")
+            if unified and session.ticket_id:
+                await _post_cross_domain_comment_storage(session, unified, _c)
     except Exception:
         pass  # coordinator is best-effort
+
+
+async def _post_cross_domain_comment_storage(session, unified: dict, http) -> None:
+    """Append the unified cross-domain correlation summary to the storage xyOps ticket."""
+    try:
+        ctype   = unified.get("correlation_type", "UNKNOWN")
+        primary = unified.get("primary_domain", "unknown")
+        risk    = unified.get("combined_risk_level", "unknown").upper()
+        score   = unified.get("combined_risk_score", 0.0)
+        narrative = unified.get("narrative", "")
+        chain   = unified.get("causal_chain") or []
+        actions = unified.get("unified_recommended_actions") or []
+
+        chain_md   = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(chain))
+        actions_md = "\n".join(f"  - {a}" for a in actions[:5])
+
+        body = (
+            f"### 🔗 Cross-Domain Correlation Detected\n"
+            f"**Type:** `{ctype}`  |  **Primary domain:** `{primary}`  "
+            f"|  **Combined risk:** `{risk}` ({score:.2f})\n\n"
+            f"{narrative}\n\n"
+            f"**Causal chain:**\n{chain_md}\n\n"
+            f"**Unified recommended actions:**\n{actions_md}\n"
+        )
+        await _post_comment(session.ticket_id, step=0, status="alert", msg=body, http=http)
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

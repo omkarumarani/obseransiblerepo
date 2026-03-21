@@ -33,13 +33,14 @@ from obs_intelligence.local_llm_enricher import local_llm_enricher
 from obs_intelligence.outcome_store import OutcomeStore
 from obs_intelligence.incident_coordinator import IncidentCoordinator
 from obs_intelligence.metrics_publisher import (
-    obs_intelligence_external_validation_total,
-    obs_intelligence_local_validation_duration_seconds,
-    obs_intelligence_local_validation_total,
-    obs_intelligence_scenario_outcome_total,
-    obs_intelligence_webhook_alerts_total,
-)
-
+        obs_intelligence_cross_domain_correlations_total,
+        obs_intelligence_external_validation_total,
+        obs_intelligence_local_validation_duration_seconds,
+        obs_intelligence_local_validation_total,
+        obs_intelligence_scenario_outcome_total,
+        obs_intelligence_webhook_alerts_total,
+    )
+from obs_intelligence.cross_domain_correlator import cross_domain_correlator
 logger = logging.getLogger("obs-intelligence")
 
 _PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
@@ -384,18 +385,30 @@ async def record_incident(body: dict) -> dict:
     """
     Record a domain incident and detect cross-domain co-occurrence.
 
+    Extended payload (v2) adds a ``signals`` dict so the CrossDomainCorrelator
+    can produce a fully-typed UnifiedSREAssessment without an extra Prometheus
+    query round-trip.
+
     Body: {
         "domain":       "compute" | "storage",
         "service_name": "frontend-api",
         "alert_name":   "HighErrorRate",
         "risk_score":   0.72,
         "scenario_id":  "high_error_rate",
-        "run_id":       "run-abc123"
+        "run_id":       "run-abc123",
+        "signals": {                    # optional — enriches correlation
+            "error_rate":       0.15,   # compute fraction in [0,1]
+            "latency_p99_ms":   620,    # compute p99 in ms
+            "cpu_usage_pct":    0.71,   # compute CPU fraction in [0,1]
+            "io_latency_s":     0.28,   # storage seconds
+            "pool_usage_pct":   0.82,   # storage fraction in [0,1]
+            "osd_up":           9,
+            "osd_total":        10
+        }
     }
 
-    Returns {"status": "ok", "cross_domain_event": null | {CrossDomainEvent}}.
-    When a CrossDomainEvent is returned, callers should add a comment to
-    their incident ticket to surface the correlation.
+    Returns {"status": "ok", "cross_domain_event": null | {...},
+             "unified_assessment": null | {UnifiedSREAssessment}}.
     """
     domain       = str(body.get("domain", "compute"))
     service_name = str(body.get("service_name", ""))
@@ -403,6 +416,7 @@ async def record_incident(body: dict) -> dict:
     risk_score   = float(body.get("risk_score", 0.0))
     scenario_id  = str(body.get("scenario_id", ""))
     run_id       = str(body.get("run_id", ""))
+    signals      = dict(body.get("signals") or {})
 
     cross_domain_event = _incident_coordinator.record_incident(
         domain=domain,
@@ -411,20 +425,62 @@ async def record_incident(body: dict) -> dict:
         risk_score=risk_score,
         scenario_id=scenario_id,
         run_id=run_id,
+        signals=signals,
     )
 
+    unified_assessment: dict | None = None
+
     if cross_domain_event:
+        # Log without internal _-prefixed entries
+        loggable = {k: v for k, v in cross_domain_event.items() if not k.startswith("_")}
         logger.warning(
             "Cross-domain correlation detected  domains=%s  services=%s  "
             "combined_risk=%.3f  alert_a=%s  alert_b=%s",
-            cross_domain_event["domains"],
-            cross_domain_event["services"],
-            cross_domain_event["combined_risk_score"],
-            cross_domain_event.get("alert_a", ""),
-            cross_domain_event.get("alert_b", ""),
+            loggable["domains"],
+            loggable["services"],
+            loggable["combined_risk_score"],
+            loggable.get("alert_a", ""),
+            loggable.get("alert_b", ""),
         )
 
-    return {"status": "ok", "cross_domain_event": cross_domain_event}
+        # Produce the unified SREAssessment
+        compute_entry = cross_domain_event.pop("_compute_entry", {})
+        storage_entry = cross_domain_event.pop("_storage_entry", {})
+        try:
+            unified = cross_domain_correlator.assess(compute_entry, storage_entry)
+            unified_assessment = unified.to_dict()
+            _incident_coordinator.store_unified_assessment(unified_assessment)
+            obs_intelligence_cross_domain_correlations_total.labels(
+                correlation_type=unified.correlation_type,
+            ).inc()
+            logger.info(
+                "Unified SREAssessment  type=%s  primary=%s  combined_risk=%.2f",
+                unified.correlation_type,
+                unified.primary_domain,
+                unified.combined_risk_score,
+            )
+        except Exception as exc:
+            logger.warning("CrossDomainCorrelator.assess() failed: %s", exc)
+
+    return {
+        "status": "ok",
+        "cross_domain_event": {k: v for k, v in cross_domain_event.items() if not k.startswith("_")} if cross_domain_event else None,
+        "unified_assessment": unified_assessment,
+    }
+
+
+@app.get("/intelligence/correlation/current")
+async def correlation_current() -> dict:
+    """
+    Return the most recently produced UnifiedSREAssessment (within 10-min TTL).
+
+    Polled by the Streamlit Agent Mesh tab to display the live cross-domain
+    correlation panel whenever two domains are simultaneously degraded.
+
+    Returns {"status": "ok", "assessment": null} when nothing active.
+    """
+    assessment = _incident_coordinator.get_active_correlation()
+    return {"status": "ok", "assessment": assessment}
 
 
 @app.post("/webhook")

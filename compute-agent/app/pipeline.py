@@ -449,22 +449,79 @@ def update_pipeline_session_state(
 
 
 async def _notify_coordinator(session: PipelineSession) -> None:
-    """Fire-and-forget: tell obs-intelligence about this incident."""
+    """Fire-and-forget: tell obs-intelligence about this incident.
+
+    v2: includes a ``signals`` snapshot so obs-intelligence can run the
+    CrossDomainCorrelator without an extra Prometheus round-trip.  When a
+    simultaneous storage incident is detected a ``unified_assessment`` is
+    returned and we post it as a ticket comment so SREs see the cross-domain
+    causal chain immediately.
+    """
     try:
-        await _http.post(
-            f"{_OBS_INTELLIGENCE_URL}/intelligence/record-incident",
-            json={
-                "domain":       "compute",
-                "service_name": session.service_name,
-                "alert_name":   session.alert_name,
-                "risk_score":   session.risk_score,
-                "scenario_id":  session.analysis.get("scenario_id", ""),
-                "run_id":       session.bridge_trace_id,
+        m = session.metrics or {}
+        payload = {
+            "domain":       "compute",
+            "service_name": session.service_name,
+            "alert_name":   session.alert_name,
+            "risk_score":   session.risk_score,
+            "scenario_id":  session.analysis.get("scenario_id", ""),
+            "run_id":       session.bridge_trace_id,
+            "signals": {
+                "error_rate":      _safe_float(m.get("error_rate_pct"), divisor=100.0),
+                "latency_p99_ms":  _safe_float(m.get("p99_latency_ms")),
+                "cpu_usage_pct":   _safe_float(m.get("cpu_pct"), divisor=100.0),
+                "risk_level":      session.risk_level,
             },
+        }
+        resp = await _http.post(
+            f"{_OBS_INTELLIGENCE_URL}/intelligence/record-incident",
+            json=payload,
             timeout=3.0,
         )
+        data = resp.json()
+        unified = data.get("unified_assessment")
+        if unified and session.ticket_id:
+            await _post_cross_domain_comment(session, unified)
     except Exception:
         pass  # coordinator is best-effort
+
+
+def _safe_float(value, *, divisor: float = 1.0) -> float:
+    """Return float(value) / divisor, or 0.0 on any error."""
+    try:
+        return float(value) / divisor
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0.0
+
+
+async def _post_cross_domain_comment(session: PipelineSession, unified: dict) -> None:
+    """Append the unified cross-domain correlation summary to the xyOps ticket."""
+    try:
+        ctype   = unified.get("correlation_type", "UNKNOWN")
+        primary = unified.get("primary_domain", "unknown")
+        risk    = unified.get("combined_risk_level", "unknown").upper()
+        score   = unified.get("combined_risk_score", 0.0)
+        narrative = unified.get("narrative", "")
+        chain   = unified.get("causal_chain") or []
+        actions = unified.get("unified_recommended_actions") or []
+
+        chain_md   = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(chain))
+        actions_md = "\n".join(f"  - {a}" for a in actions[:5])
+
+        body = (
+            f"### 🔗 Cross-Domain Correlation Detected\n"
+            f"**Type:** `{ctype}`  |  **Primary domain:** `{primary}`  "
+            f"|  **Combined risk:** `{risk}` ({score:.2f})\n\n"
+            f"{narrative}\n\n"
+            f"**Causal chain:**\n{chain_md}\n\n"
+            f"**Unified recommended actions:**\n{actions_md}\n"
+        )
+        await _post(
+            "/api/app/add_ticket_change/v1",
+            {"id": session.ticket_id, "change": {"type": "comment", "body": body}},
+        )
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

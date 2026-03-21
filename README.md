@@ -2,7 +2,7 @@
 
 A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a **Streamlit Command Center** with live agent mesh topology.
 
-> **Latest:** v10.0.0 — Streamlit Command Center (7-tab live dashboard, Agent Mesh visualisation) + qwen3.5 LLM upgrade.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
+> **Latest:** v11.0.0 — Multi-agent cross-domain correlation engine: simultaneous compute+storage alerts now produce a unified `UnifiedSREAssessment` with causal chain, urgency, and recommended actions, surfaced in the Agent Mesh tab and written back to both xyOps tickets.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
 
 ---
 
@@ -21,6 +21,7 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
   - [Phase 8 — Local LLM Validation & ChromaDB Knowledge Store](#phase-8--local-llm-validation--chromadb-knowledge-store-block-f)
   - [Phase 9 — AIOps Command Center UI (React)](#phase-9--aiops-command-center-ui-react)
   - [Phase 10 — Streamlit Command Center + Agent Mesh + qwen3.5](#phase-10--streamlit-command-center--agent-mesh--qwen35)
+  - [Phase 11 — Multi-agent Cross-Domain Correlation](#phase-11--multi-agent-cross-domain-correlation)
 - [What Is Still To Add](#what-is-still-to-add)
   - [Phase 11 — Dashboard Enhancements](#phase-11--dashboard-enhancements)
   - [Phase 12 — Intelligence & Autonomy](#phase-12--intelligence--autonomy)
@@ -287,9 +288,77 @@ Replaced the React `command-center` + `aiops-ui` services with a single Python S
 
 ---
 
+### Phase 11 — Multi-agent Cross-Domain Correlation
+
+When compute and storage alerts fire simultaneously (within a 120 s co-occurrence window), the platform now detects the cascading failure relationship and produces a unified **`UnifiedSREAssessment`** — a full causal-chain analysis with urgency, combined risk score, and ordered remediation actions across both domains.
+
+#### Architecture
+
+```
+Compute Agent  ──┐
+                 ├─ POST /intelligence/record-incident (with signals snapshot)
+Storage Agent  ──┘
+                        │
+                  IncidentCoordinator
+                  (120 s co-occurrence ring buffer)
+                        │ cross_domain_event
+                  CrossDomainCorrelator.assess()
+                        │
+                  UnifiedSREAssessment ──► stored in IncidentCoordinator
+                        │
+                  GET /intelligence/correlation/current  ◄── Streamlit polling
+                        │
+              both agent tickets get cross-domain comment
+```
+
+#### `CrossDomainCorrelator` (`obs-intelligence/app/obs_intelligence/cross_domain_correlator.py`)
+
+A fully **deterministic, rule-based** correlator (no LLM needed — fast and auditable):
+
+| Correlation Type | Detection Logic | Primary Domain |
+|---|---|---|
+| `STORAGE_ROOT` | Storage IO latency ≥ 0.2 s **or** OSD fraction < 90% — compute errors follow | `storage` |
+| `COMPUTE_ROOT` | Compute CPU ≥ 85% — storage thread starvation follows | `compute` |
+| `SHARED_INFRASTRUCTURE` | Both domains degraded similarly, no single root cause signal | `shared` |
+| `INDEPENDENT_CONCURRENT` | Signal patterns don't cross-correlate | `compute` |
+
+**Combined risk formula:** `min(1.0, max(compute_risk, storage_risk) × 1.25)` — boosted because two simultaneous incidents always imply shared-impact blast radius.
+
+#### Signals carried by agents (v2 `record-incident` payload)
+
+| Domain | Signal Keys |
+|---|---|
+| Compute | `error_rate`, `latency_p99_ms`, `cpu_usage_pct`, `risk_level` |
+| Storage | `io_latency_s`, `pool_usage_pct`, `osd_up`, `osd_total` |
+
+#### New REST endpoints (obs-intelligence :9100)
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /intelligence/record-incident` | Extended — now accepts `signals` dict, returns `unified_assessment` when correlation fires |
+| `GET /intelligence/correlation/current` | Returns latest `UnifiedSREAssessment` (10-min TTL) for Streamlit polling |
+
+#### Agent Mesh tab — Cross-Domain Panel
+The `🌐 Agent Mesh` tab now contains a **🔗 Cross-Domain Correlation** expander that auto-refreshes alongside the rest of the tab.  When active it shows:
+- Correlation type badge + risk badge + urgency + primary domain
+- Compute vs storage service / scenario row
+- Narrative paragraph
+- Causal chain (numbered steps)
+- Unified recommended actions
+- Evidence bullet list
+- Raw JSON expander for debugging
+
+#### xyOps ticket integration
+Both the compute-agent and storage-agent tickets receive an out-of-band comment with the full causal chain and recommended actions the moment a cross-domain correlation is detected.
+
+#### Prometheus metric
+`obs_intelligence_cross_domain_correlations_total{correlation_type}` — counts correlations detected per type.
+
+---
+
 ## What Is Still To Add
 
-### Phase 11 — Dashboard Enhancements
+### Phase 12 — Dashboard Enhancements
 | Item | Description | Effort |
 |---|---|---|
 | **Streamlit Storage Agent tab** | Add a second Live Pipeline tab (or tab group) for the storage-agent pipeline, mirroring the compute-agent view | Medium |
@@ -299,10 +368,10 @@ Replaced the React `command-center` + `aiops-ui` services with a single Python S
 | **Streamlit multi-page** | Split the 7 tabs into Streamlit multi-page app (separate `.py` files per tab) to keep codebase maintainable as it grows | Medium |
 | **Dark/light theme toggle** | Allow users to switch between the dark Streamlit custom CSS and default light theme | Low |
 
-### Phase 12 — Intelligence & Autonomy
+### Phase 13 — Intelligence & Autonomy
 | Item | Description | Effort |
 |---|---|---|
-| **Multi-agent correlation** | When compute and storage alerts fire simultaneously, detect cross-domain cascading failures and produce a unified SREAssessment | High |
+| ~~**Multi-agent correlation**~~ | ~~When compute and storage alerts fire simultaneously, detect cross-domain cascading failures~~ | ✅ Done (v11.0.0) |
 | **SREAssessment feedback loop** | Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite) | High |
 | **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts | Medium |
 | **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
@@ -506,6 +575,7 @@ See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
 
 | Version | Highlights |
 |---|---|
+| **v11.0.0** | Multi-agent cross-domain correlation engine (`CrossDomainCorrelator`) + unified `SREAssessment` + agent signals + Streamlit cross-domain panel + xyOps ticket comments |
 | **v10.0.0** | Streamlit Command Center (7 tabs) + Agent Mesh vis.js topology + qwen3.5 LLM + compute-agent DB fallback fix |
 | **v9.0.0** | AIOps Command Center UI (React) — ui-backend BFF, pipeline playback, scenario explorer, trust-score tracker |
 | **v8.0.0** | Block F: Local LLM validation + ChromaDB knowledge store |

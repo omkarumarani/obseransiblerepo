@@ -1190,6 +1190,98 @@ with tab_mesh:
     else:
         st.info("No active pipeline session. Trigger an alert and the mesh will light up.")
 
+    # ── Cross-domain correlation panel ────────────────────────────────────────
+    st.divider()
+    st.subheader("🔗 Cross-Domain Correlation")
+
+    xd = api_get(f"{OBS_INTELLIGENCE_URL}/intelligence/correlation/current")
+    xd_assessment = (xd or {}).get("assessment")
+
+    if xd_assessment:
+        ctype   = xd_assessment.get("correlation_type", "UNKNOWN")
+        primary = xd_assessment.get("primary_domain", "unknown")
+        risk_lv = xd_assessment.get("combined_risk_level", "unknown").upper()
+        risk_sc = float(xd_assessment.get("combined_risk_score", 0.0))
+        urgency = xd_assessment.get("urgency", "—")
+        detected_at = xd_assessment.get("detected_at", "")
+        narrative   = xd_assessment.get("narrative", "")
+        chain   = xd_assessment.get("causal_chain") or []
+        actions = xd_assessment.get("unified_recommended_actions") or []
+        evidence= xd_assessment.get("evidence") or []
+        compute_svc = xd_assessment.get("compute_service", "—")
+        storage_svc = xd_assessment.get("storage_service", "—")
+        compute_scn = xd_assessment.get("compute_scenario", "—")
+        storage_scn = xd_assessment.get("storage_scenario", "—")
+
+        _CTYPE_COLOUR = {
+            "STORAGE_ROOT":           "#ef4444",  # red    — storage caused compute
+            "COMPUTE_ROOT":           "#f97316",  # orange — compute caused storage
+            "SHARED_INFRASTRUCTURE":  "#eab308",  # yellow — shared fault
+            "INDEPENDENT_CONCURRENT": "#64748b",  # grey   — coincidental
+        }
+        _RISK_COLOUR = {"CRITICAL": "#ef4444", "HIGH": "#f97316", "MEDIUM": "#eab308", "LOW": "#22c55e"}
+        badge_c = _CTYPE_COLOUR.get(ctype, "#64748b")
+        badge_r = _RISK_COLOUR.get(risk_lv, "#64748b")
+
+        st.markdown(
+            f'<div style="background:#1e293b;border-left:4px solid {badge_c};padding:14px 18px;'
+            f'border-radius:0 8px 8px 0;margin-bottom:12px;">'
+            f'<span style="background:{badge_c};color:#fff;padding:2px 8px;border-radius:4px;'
+            f'font-size:12px;font-weight:700">{ctype}</span>&nbsp;&nbsp;'
+            f'<span style="background:{badge_r};color:#fff;padding:2px 8px;border-radius:4px;'
+            f'font-size:12px;font-weight:700">{risk_lv} {risk_sc:.2f}</span>&nbsp;&nbsp;'
+            f'<span style="color:#94a3b8;font-size:12px">urgency: <b>{urgency}</b>'
+            f' &nbsp;|&nbsp; primary: <b>{primary}</b>'
+            f' &nbsp;|&nbsp; {detected_at[:19].replace("T"," ") if detected_at else ""}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Service / scenario row
+        xa, xb = st.columns(2)
+        xa.markdown(
+            f"**💻 Compute**  \n`{compute_svc}`  \nScenario: `{compute_scn}`"
+        )
+        xb.markdown(
+            f"**🗄️ Storage**  \n`{storage_svc}`  \nScenario: `{storage_scn}`"
+        )
+
+        if narrative:
+            st.info(narrative)
+
+        xc1, xc2, xc3 = st.columns(3)
+        with xc1:
+            with st.expander("🔗 Causal Chain", expanded=True):
+                if chain:
+                    for i, step in enumerate(chain, 1):
+                        st.markdown(f"**{i}.** {step}")
+                else:
+                    st.caption("No chain data.")
+        with xc2:
+            with st.expander("🛠️ Recommended Actions", expanded=True):
+                if actions:
+                    for act in actions:
+                        st.markdown(f"- {act}")
+                else:
+                    st.caption("No actions.")
+        with xc3:
+            with st.expander("🔍 Evidence", expanded=False):
+                if evidence:
+                    for ev in evidence:
+                        st.markdown(f"- {ev}")
+                else:
+                    st.caption("No evidence.")
+
+        # Raw JSON for debugging
+        with st.expander("📄 Raw unified_assessment JSON", expanded=False):
+            st.json(xd_assessment)
+    else:
+        st.success(
+            "No active cross-domain correlation — compute and storage are operating independently.",
+            icon="✅",
+        )
+        st.caption("This panel updates automatically when both agents fire simultaneously within a 2-minute window.")
+
     # ── Pending approvals mini-feed ────────────────────────────────────────────
     st.divider()
     st.subheader("⏳ Pending Approvals (Gitea PRs waiting)")

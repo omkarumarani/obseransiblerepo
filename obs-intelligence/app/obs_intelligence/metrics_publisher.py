@@ -86,6 +86,13 @@ obs_intelligence_forecast_loop_runs_total = PromCounter(
     ["status"],   # success | error
 )
 
+# ── Cross-domain correlation metrics ─────────────────────────────────────────
+obs_intelligence_cross_domain_correlations_total = PromCounter(
+    "obs_intelligence_cross_domain_correlations_total",
+    "Total cross-domain (compute+storage) correlations detected",
+    ["correlation_type"],  # STORAGE_ROOT | COMPUTE_ROOT | SHARED_INFRASTRUCTURE | INDEPENDENT_CONCURRENT
+)
+
 # -- Learning layer metrics ---------------------------------------------------
 obs_intelligence_external_validation_total = PromCounter(
     "obs_intelligence_external_validation_total",
