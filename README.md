@@ -2,7 +2,7 @@
 
 A full-stack, containerised **AIOps observability platform** that closes the loop from Prometheus alert → AI analysis → local LLM corroboration → enriched incident ticket → human-approved Ansible remediation — with a shared intelligence engine, ChromaDB knowledge store, and a **Streamlit Command Center** with live agent mesh topology.
 
-> **Latest:** v11.0.0 — Multi-agent cross-domain correlation engine: simultaneous compute+storage alerts now produce a unified `UnifiedSREAssessment` with causal chain, urgency, and recommended actions, surfaced in the Agent Mesh tab and written back to both xyOps tickets.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
+> **Latest:** v12.0.0 — SREAssessment feedback loop (RL-lite): remediation outcomes and LLM validation verdicts now feed back into per-scenario confidence weights via exponential time decay, dynamic evidence tiers (±0.00–±0.25), outcome normalisation, and multi-signal inputs — closing the full learning cycle.  See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full changelog.
 
 ---
 
@@ -22,9 +22,10 @@ A full-stack, containerised **AIOps observability platform** that closes the loo
   - [Phase 9 — AIOps Command Center UI (React)](#phase-9--aiops-command-center-ui-react)
   - [Phase 10 — Streamlit Command Center + Agent Mesh + qwen3.5](#phase-10--streamlit-command-center--agent-mesh--qwen35)
   - [Phase 11 — Multi-agent Cross-Domain Correlation](#phase-11--multi-agent-cross-domain-correlation)
+  - [Phase 12 — SREAssessment Feedback Loop (RL-lite)](#phase-12--sreassessment-feedback-loop-rl-lite)
 - [What Is Still To Add](#what-is-still-to-add)
-  - [Phase 11 — Dashboard Enhancements](#phase-11--dashboard-enhancements)
-  - [Phase 12 — Intelligence & Autonomy](#phase-12--intelligence--autonomy)
+  - [Phase 13 — Dashboard Enhancements](#phase-13--dashboard-enhancements)
+  - [Phase 13 — Intelligence & Autonomy](#phase-13--intelligence--autonomy)
   - [Phase 13 — Integrations & Hardening](#phase-13--integrations--hardening)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
@@ -356,9 +357,39 @@ Both the compute-agent and storage-agent tickets receive an out-of-band comment 
 
 ---
 
+### Phase 12 — SREAssessment Feedback Loop (RL-lite)
+
+Closes the model learning cycle: every recorded remediation outcome — and every LLM corroboration/divergence verdict — updates a per-scenario confidence weight stored in SQLite, so the `ScenarioCorrelator` gets smarter over time without retraining.
+
+**`obs-intelligence/app/obs_intelligence/outcome_store.py`** — complete rewrite
+
+| Capability | Detail |
+|---|---|
+| **Exponential time decay** | `decay_weight = exp(−λ·days_ago)`, half-life 30 days (env: `OUTCOME_DECAY_HALF_LIFE_DAYS`) |
+| **Dynamic evidence tiers** | none(0)→±0.00 · low(1-4)→±0.10 · medium(5-14)→±0.15 · high(15-29)→±0.20 · strong(30+)→±0.25 |
+| **Outcome normalisation** | positive(1.0): `success/resolved/auto_resolved` · partial(0.5): `timedout/declined` · negative(0.0): `failure/escalated/…` |
+| **Multi-signal inputs** | `signal_strength=1.0` for real outcomes; `0.3` for LLM validation signals |
+| **Fast-resolution bonus** | `resolution_time_seconds < 300` → +0.1 boost before clamping |
+| **Trend computation** | last-5 vs prior-5 decay-weighted success rate → `improving / degrading / stable` |
+| **Schema migration** | `ALTER TABLE … ADD COLUMN` wrapped in try/except — no data loss on upgrade |
+| **Stale-weight refresh** | `_refresh_stale_weights()` at startup re-runs `_recalculate()` for rows miscounted by the old formula |
+
+**`obs-intelligence/app/main.py`** — 3 targeted changes
+- `POST /intelligence/record-outcome` passes `resolution_time_seconds`; returns `weight_adjustment`, `evidence_tier`, `trend`, `total_seen`
+- `POST /intelligence/validate-external-analysis` routes `corroborated`/`divergent` verdicts to `record_validation_signal()` as 0.3-weight implicit signals
+- New `GET /intelligence/feedback-stats` — all scenarios with sparkline history + global learning stats
+
+**`streamlit-dashboard/app.py`** — Outcomes tab learning panel
+- 5-metric KPI row: scenarios tracked · total outcomes · avg Δ · improving · degrading
+- Bar chart of weight adjustments colour-coded green/red/grey
+- Per-scenario detail table: tier badge, trend arrow, decay rate, raw rate, signals
+- Sparkline history charts for top scenarios with ≥3 outcomes
+
+---
+
 ## What Is Still To Add - to follow
 
-### Phase 12 — Dashboard Enhancements
+### Phase 13 — Dashboard Enhancements
 | Item | Description | Effort |
 |---|---|---|
 | **Streamlit Storage Agent tab** | Add a second Live Pipeline tab (or tab group) for the storage-agent pipeline, mirroring the compute-agent view | Medium |
@@ -372,7 +403,7 @@ Both the compute-agent and storage-agent tickets receive an out-of-band comment 
 | Item | Description | Effort |
 |---|---|---|
 | ~~**Multi-agent correlation**~~ | ~~When compute and storage alerts fire simultaneously, detect cross-domain cascading failures~~ | ✅ Done (v11.0.0) |
-| **SREAssessment feedback loop** | Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite) | High |
+| ~~**SREAssessment feedback loop**~~ | ~~Feed recorded outcomes back into scenario confidence weights over time (reinforcement learning lite)~~ | ✅ Done (v12.0.0) |
 | **Recurrence counter persistence** | `recurrence_count` is currently in-memory; persist it in Redis or SQLite so obs-intelligence survives restarts | Medium |
 | **Persistent intelligence state** | Replace in-memory current state with Redis or SQLite so obs-intelligence survives restarts | Medium |
 | **ChromaDB cold-start seeding** | Pre-seed the knowledge store with synthetic past incidents so local validation works on day one | Medium |
@@ -575,6 +606,7 @@ See [RELEASE-NOTES.md](RELEASE-NOTES.md) for the full versioned changelog.
 
 | Version | Highlights |
 |---|---|
+| **v12.0.0** | SREAssessment RL-lite feedback loop — exponential decay, dynamic evidence tiers, outcome normalisation, validation signals, `feedback-stats` API, Streamlit learning panel |
 | **v11.0.0** | Multi-agent cross-domain correlation engine (`CrossDomainCorrelator`) + unified `SREAssessment` + agent signals + Streamlit cross-domain panel + xyOps ticket comments |
 | **v10.0.0** | Streamlit Command Center (7 tabs) + Agent Mesh vis.js topology + qwen3.5 LLM + compute-agent DB fallback fix |
 | **v9.0.0** | AIOps Command Center UI (React) — ui-backend BFF, pipeline playback, scenario explorer, trust-score tracker |
