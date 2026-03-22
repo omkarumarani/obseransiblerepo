@@ -622,6 +622,13 @@ async def process_decision(
     if req.status != "pending":
         return {"error": f"Approval {approval_id} already in state={req.status}"}
 
+    # Gate: reject approval if playbook validation failed
+    if approved and not req.validation_passed:
+        return {
+            "error": "Cannot approve — playbook validation failed. Fix the playbook first.",
+            "validation_result": req.validation_result,
+        }
+
     now = datetime.now(timezone.utc).isoformat()
     req.decided_by = decided_by
     req.decided_at = now

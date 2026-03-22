@@ -346,11 +346,22 @@ async def list_pending_approvals() -> dict:
         "items": [
             {
                 "approval_id": r.approval_id,
+                "session_id": r.session_id,
                 "alert_name": r.alert_name,
                 "service_name": r.service_name,
                 "severity": r.severity,
                 "created_at": r.created_at,
                 "approval_ticket_id": r.approval_ticket_id,
+                "rca_summary": r.rca_summary,
+                "ansible_playbook": r.ansible_playbook,
+                "ansible_description": r.ansible_description,
+                "validation_passed": r.validation_passed,
+                "validation_result": r.validation_result,
+                "gitea_pr_url": r.gitea_pr_url,
+                "gitea_pr_num": r.gitea_pr_num,
+                "risk_score": r.risk_score,
+                "env_tier": r.env_tier,
+                "action_type": r.action_type,
             }
             for r in pending
         ],

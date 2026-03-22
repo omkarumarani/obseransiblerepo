@@ -190,7 +190,7 @@ services:
       - "8888:8888"    # Collector self-metrics      (scraped by Prometheus)
       - "8889:8889"    # App metrics scrape endpoint (scraped by Prometheus)
       - "13133:13133"  # Health check  curl http://localhost:13133/
-      - "55679:55679"  # zPages UI     http://localhost:55679/debug/pipelinez
+      - "56000:55679"  # zPages UI     http://localhost:56000/debug/pipelinez
     networks:
       - obs-net
     restart: unless-stopped

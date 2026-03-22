@@ -105,6 +105,12 @@ def _render_approval_queue(items: list, agent_url: str, agent_label: str) -> Non
         alert       = item.get("alert_name", "")
         created     = since_str(item.get("created_at", ""))
         ticket      = item.get("approval_ticket_id", "")
+        rca         = item.get("rca_summary", "")
+        playbook    = item.get("ansible_playbook", "")
+        val_passed  = item.get("validation_passed", False)
+        val_result  = item.get("validation_result", {})
+        test_results = val_result.get("test_results", []) if val_result else []
+        risk_score  = item.get("risk_score", 0.0)
 
         with st.container(border=True):
             h1, h2, h3 = st.columns([4, 2, 2])
@@ -114,26 +120,85 @@ def _render_approval_queue(items: list, agent_url: str, agent_label: str) -> Non
                 f"Ticket: `{ticket or 'N/A'}` · {sev_icon(sev)} {sev.upper()} · 🕐 {created}"
             )
 
+            # ── Validation badge ──────────────────────────────────────────
+            if val_passed:
+                h2.success("✅ Validation Passed")
+            else:
+                h2.error("❌ Validation Failed")
+
+            if risk_score:
+                h3.metric("Risk Score", f"{risk_score:.2f}")
+
+            # ── Test case results table -----------------------------------------------
+            if test_results:
+                passed_count = sum(1 for t in test_results if t.get("status") == "PASSED")
+                total_count  = len(test_results)
+                st.markdown(
+                    f"**Playbook Test Results:** {passed_count}/{total_count} passed"
+                )
+                import pandas as pd
+                tc_rows = []
+                for tc in test_results:
+                    tc_rows.append({
+                        "ID":     tc.get("id", "?"),
+                        "Name":   tc.get("name", ""),
+                        "Phase":  tc.get("phase", ""),
+                        "Status": f"{'✅' if tc.get('status') == 'PASSED' else '❌'} {tc.get('status', '?')}",
+                        "Detail": tc.get("output", "")[:120],
+                    })
+                st.dataframe(
+                    pd.DataFrame(tc_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            elif val_result:
+                st.info("No structured test cases returned — check ansible-runner output.")
+
+            # ── RCA summary ──────────────────────────────────────────
+            if rca:
+                with st.expander("📋 Root Cause Analysis"):
+                    st.markdown(rca)
+
+            # ── Playbook preview ──────────────────────────────────────
+            if playbook:
+                with st.expander("📄 Ansible Playbook"):
+                    st.code(playbook, language="yaml")
+
+            # ── Validation stdout ─────────────────────────────────────
+            val_stdout = val_result.get("stdout", "") if val_result else ""
+            if val_stdout:
+                with st.expander("🔍 Validation Dry-Run Output"):
+                    st.code(val_stdout, language="text")
+
+            # ── Approve / Decline buttons (gated on validation) ─────────
             approve_key = f"approve_{agent_label}_{approval_id}"
             reject_key  = f"reject_{agent_label}_{approval_id}"
             decision_id = item.get("session_id", approval_id)
 
-            if h2.button("✅ Approve", key=approve_key, use_container_width=True):
-                result = api_post(
-                    f"{agent_url}/approval/{decision_id}/decision",
-                    {"decision": "approved", "approver": "command-center-ui",
-                     "notes": "Approved via Streamlit UI"},
+            btn_cols = st.columns([3, 3, 6])
+            if val_passed:
+                if btn_cols[0].button("✅ Approve", key=approve_key, use_container_width=True):
+                    result = api_post(
+                        f"{agent_url}/approval/{decision_id}/decision",
+                        {"approved": True, "decided_by": "command-center-ui",
+                         "notes": "Approved via Streamlit UI"},
+                    )
+                    if result and "error" not in result:
+                        st.toast(f"✅ Approved {approval_id}", icon="✅")
+                    else:
+                        st.error(f"Approval failed: {result}")
+                    st.rerun()
+            else:
+                btn_cols[0].button(
+                    "🔒 Approve (blocked)", key=approve_key,
+                    use_container_width=True, disabled=True,
+                    help="Approval blocked — playbook validation must pass first",
                 )
-                if result and "error" not in result:
-                    st.toast(f"✅ Approved {approval_id}", icon="✅")
-                else:
-                    st.error(f"Approval failed: {result}")
-                st.rerun()
 
-            if h3.button("❌ Decline", key=reject_key, use_container_width=True):
+            if btn_cols[1].button("❌ Decline", key=reject_key, use_container_width=True):
                 result = api_post(
                     f"{agent_url}/approval/{decision_id}/decision",
-                    {"decision": "declined", "approver": "command-center-ui",
+                    {"approved": False, "decided_by": "command-center-ui",
                      "notes": "Declined via Streamlit UI"},
                 )
                 if result and "error" not in result:

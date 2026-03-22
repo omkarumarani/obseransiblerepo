@@ -23,9 +23,11 @@ global:
   # Alertmanager stops hearing from Prometheus about it.
   resolve_timeout: 5m
 
-  # (Optional) Default SMTP settings for email notifications.
-  # smtp_smarthost: 'smtp.example.com:587'
-  # smtp_from: 'alertmanager@example.com'
+  # Default SMTP settings for the email-all receiver.
+  # Replace with real SMTP credentials when ready.
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_from: 'alertmanager@example.com'
+  smtp_require_tls: false
 
 # ── Routing tree ──────────────────────────────────────────────
 # All alerts flow through this tree.  The first matching route wins.

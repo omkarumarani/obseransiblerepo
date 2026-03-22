@@ -200,6 +200,15 @@ async def approval_decision(session_id: str, decision: ApprovalDecision) -> dict
 
     async with httpx.AsyncClient() as http:
         if decision.approved:
+            # Gate: reject approval if playbook validation failed
+            if not session.validation_passed:
+                return {
+                    "status": "validation_failed",
+                    "session_id": session_id,
+                    "message": "Cannot approve — playbook validation failed. Fix the playbook first.",
+                    "validation_result": session.validation_result,
+                }
+
             logger.info("Approval GRANTED by %s for session=%s action=%s", decision.decided_by, session_id, action)
             session.status = "executing"
             _increment_action_counter(action)
@@ -235,7 +244,19 @@ async def approval_decision(session_id: str, decision: ApprovalDecision) -> dict
 @app.get("/approvals/pending")
 async def list_pending_approvals() -> dict:
     pending = [
-        {"session_id": s.session_id, "alert_name": s.alert_name, "action": s.ai_result.get("recommended_action")}
+        {
+            "session_id": s.session_id,
+            "alert_name": s.alert_name,
+            "service_name": s.service_name,
+            "severity": s.severity,
+            "action": s.ai_result.get("recommended_action"),
+            "rca_summary": s.ai_result.get("rca_summary", ""),
+            "ansible_playbook": s.ai_result.get("ansible_playbook", ""),
+            "validation_passed": s.validation_passed,
+            "validation_result": s.validation_result,
+            "risk_score": s.risk_score,
+            "created_at": s.created_at,
+        }
         for s in _sessions.values()
         if s.status == "awaiting_approval"
     ]

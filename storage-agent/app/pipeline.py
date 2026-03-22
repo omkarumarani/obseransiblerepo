@@ -104,6 +104,10 @@ class StoragePipelineSession:
     risk_level: str = "unknown"
     evidence_lines_data: list = field(default_factory=list)
 
+    # Pre-commit Ansible validation (populated by pipeline_approval)
+    validation_passed: bool = False
+    validation_result: dict = field(default_factory=dict)
+
 
 _sessions: dict[str, StoragePipelineSession] = {}
 
@@ -553,6 +557,86 @@ async def pipeline_approval(req: AgentRequest) -> dict:
         storage_agent_approval_required_total.inc()
         storage_agent_actions_total.labels(action_type="approval_requested").inc()
 
+        # ── Validate playbook BEFORE creating approval gate ──────────────
+        playbook = session.ai_result.get("ansible_playbook", "")
+        test_cases = session.ai_result.get("test_cases", [])
+        if playbook:
+            val_payload = {
+                "playbook_yaml": playbook,
+                "service_name": session.service_name,
+                "alert_name": session.alert_name,
+                "trace_id": session.bridge_trace_id,
+                "test_cases": test_cases,
+            }
+            try:
+                val_resp = await http.post(
+                    f"{ANSIBLE_RUNNER_URL}/validate",
+                    json=val_payload,
+                    timeout=90.0,
+                )
+                if val_resp.status_code == 200:
+                    val = val_resp.json()
+                    all_passed = val.get("all_passed", True)
+                    test_results = val.get("test_results", [])
+                    passed_count = sum(1 for t in test_results if t.get("status") == "PASSED")
+                    total_count = len(test_results)
+                    session.validation_passed = all_passed
+                    session.validation_result = {
+                        "test_results": test_results,
+                        "stdout": val.get("stdout", ""),
+                        "all_passed": all_passed,
+                    }
+                    logger.info(
+                        "Storage pre-commit validation: %s/%s passed  alert=%s",
+                        passed_count, total_count, session.alert_name,
+                    )
+                    if not all_passed:
+                        fail_lines = [
+                            "## ❌ Ansible Pre-commit Validation FAILED",
+                            "",
+                            f"**Result:** {passed_count}/{total_count} test cases passed",
+                            "",
+                            "| Test Case | Status | Detail |",
+                            "|---|---|---|",
+                        ]
+                        for tc in test_results:
+                            icon = "✅" if tc.get("status") == "PASSED" else "❌"
+                            fail_lines.append(
+                                f"| `{tc.get('id', '?')}` {tc.get('name', '')} "
+                                f"| {icon} {tc.get('status', '?')} "
+                                f"| {tc.get('output', '')[:100]} |"
+                            )
+                        fail_lines += [
+                            "",
+                            "```",
+                            val.get("stdout", "")[:1500],
+                            "```",
+                            "",
+                            "> **Manual review required.** "
+                            "Fix the playbook or investigate the alert manually.",
+                        ]
+                        await _post_comment(
+                            session.ticket_id, 5, "error",
+                            "\n".join(fail_lines), http,
+                        )
+                        session.status = "validation_failed"
+                        return {
+                            "status": "validation_failed",
+                            "session_id": req.session_id,
+                            "action": action,
+                            "validation_result": session.validation_result,
+                        }
+                else:
+                    session.validation_passed = True
+                    logger.warning(
+                        "Validator returned HTTP %d — treating as passed", val_resp.status_code
+                    )
+            except Exception as exc:
+                session.validation_passed = True
+                logger.warning("Validation call failed (fail-open): %s", exc)
+        else:
+            session.validation_passed = True
+
         # Create approval ticket in xyOps
         approval_body = (
             f"# Storage Remediation Approval Required\n\n"
@@ -648,12 +732,11 @@ async def _run_playbook(session: StoragePipelineSession, http: httpx.AsyncClient
         resp = await http.post(
             f"{ANSIBLE_RUNNER_URL}/run",
             json={
-                "playbook_content": playbook,
-                "extra_vars": {
-                    "alert_name": session.alert_name,
-                    "service_name": session.service_name,
-                    "ticket_id": session.ticket_id,
-                },
+                "playbook_yaml": playbook,
+                "service_name": session.service_name,
+                "alert_name": session.alert_name,
+                "trace_id": session.bridge_trace_id,
+                "test_cases": session.ai_result.get("test_cases", []),
             },
             timeout=120.0,
         )
